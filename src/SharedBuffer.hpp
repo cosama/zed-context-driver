@@ -24,19 +24,31 @@
  *
  **********************************************************************************/
 
-template <class T> class SharedBuffer{
+template <class T> class SharedBuffer
+{
   private:
     boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>> *buffer;
     bool owner;
+    int size;
     std::string mem_name;
     std::string que_name;
     std::string mut_name;
     boost::interprocess::managed_shared_memory *memory;
     boost::interprocess::named_mutex *nm;
-    int size;
+
 
   public:
-    SharedBuffer<T>(std::string bname, int bsize=65536): mem_name(bname), que_name(bname+"Que"), mut_name(bname+"Mut") {
+    SharedBuffer<T>()
+    {
+      size   = 0;
+      owner  = false;
+      buffer = NULL;
+      memory = NULL;
+      nm     = NULL;
+    }
+
+    SharedBuffer<T>(std::string bname, int bsize=65536): mem_name(bname), que_name(bname+"Que"), mut_name(bname+"Mut")
+    {
       //assign remaining private variables
       size= bsize;
       owner = false;
@@ -52,7 +64,6 @@ template <class T> class SharedBuffer{
       buffer = memory->find<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str()).first;
 
       //if the buffer is not find, we are considered the owner of this shared memory and will construct the buffer
-      
       if(!buffer)
       {
         //initialize shared memory STL-compatible allocator
@@ -63,9 +74,10 @@ template <class T> class SharedBuffer{
       }
     }
 
-
-    ~SharedBuffer<T>(){
-      if(owner == true){
+    ~SharedBuffer<T>()
+    {
+      if(owner == true)
+      {
         memory->destroy<T>(que_name.c_str());
         boost::interprocess::shared_memory_object::remove(mem_name.c_str());
         boost::interprocess::named_mutex::remove(mut_name.c_str());
@@ -74,17 +86,54 @@ template <class T> class SharedBuffer{
       if(memory!=NULL) delete memory;
     };
 
+    //initialize or reinitialize the function, mostly a copy of the Constructor
+    //do be used with the standard constructor, which can not initizialize properly
+    void initialize(std::string bname, int bsize=65536)
+    {
+      mem_name.assign(bname);
+      que_name.assign(bname+"Que");
+      mut_name.assign(bname+"Mut");
+      size= bsize;
+      owner = false;
+      buffer = NULL;
+
+      if(nm!=NULL) delete nm;
+      if(memory!=NULL) delete memory;
+
+      nm = new boost::interprocess::named_mutex(boost::interprocess::open_or_create, mut_name.c_str());
+      //bool look_ok=boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm); //not really necessary to lock here
+
+      //Create a new segment with given name and size
+      memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
+
+      //try to find the buffer with the same name as the momory block if not found it returns NULL (0)
+      buffer = memory->find<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str()).first;
+
+      //if the buffer is not find, we are considered the owner of this shared memory and will construct the buffer
+      if(!buffer)
+      {
+        //initialize shared memory STL-compatible allocator
+        const boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager> alloc(memory->get_segment_manager());
+        //construct a T deque buffer
+        buffer = memory->construct<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str())(alloc);
+        owner = true;
+      }
+    };
+
     //writes to buffer, if buffer size is larger than max_length remove elements
     //so that max length is assured, if max_length is zero nothing is done
     int write(T &obj, int max_length=0)
     {
+      if(buffer==NULL) return 1; //can not write could try to reconnect with initialize
       boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
       while(true)
       {
-        try{
+        try
+        {
           buffer->push_back(obj);
         }
-        catch(boost::interprocess::bad_alloc){
+        catch(boost::interprocess::bad_alloc)
+        {
             memory->grow(mem_name.c_str(), size);
             delete memory;
             memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
@@ -100,25 +149,31 @@ template <class T> class SharedBuffer{
     //reads the entire buffer and return
     std::vector<T> read()
     {
+      if(buffer==NULL) return std::vector<T>(); //can not read
       boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
       return std::vector<T> (buffer->begin(), buffer->end());;
     };
-    
-    bool is_owner(){ 
+
+    //check if this instance is the owner of the memory
+    bool is_owner()
+    { 
       return owner;
-    }
-    
-    void force_remove(){
+    };
+
+    //forcefully destroy shared_memory, we need to recreate with initialize after this call
+    void force_remove()
+    {
       memory->destroy<T>(que_name.c_str());
       boost::interprocess::shared_memory_object::remove(mem_name.c_str());
       boost::interprocess::named_mutex::remove(mut_name.c_str());
       delete nm;
       delete memory;
       memory = NULL;
-      nm = NULL;
-      owner = false;
-      size = 0;
-    }
+      nm     = NULL;
+      buffer = NULL;
+      owner  = false;
+      size   = 0;
+    };
 };
 
 #endif //#ifndef SHAREDBUFFER_HPP

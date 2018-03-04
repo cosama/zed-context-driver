@@ -15,9 +15,13 @@
  * Instances can add elements individually by calling the write member function, 
  * however, the whole buffer needs to be read in one go and is returned as a 
  * vector (stored to local memory). The memory is locked on read/write thus no 
- * other element will have access at this point. If the owner-process is 
- * terminated without calling the destructor the shared_memory might hang around. 
- * In that case a instance has to connect to the memory and call force_remove().
+ * other element will have access at this point. If the owner-process is terminated 
+ * without calling the destructor (i.e Ctrl+C) the shared_memory might hang around. 
+ * If a process is terminated while it locks the buffer, no other buffer can access
+ * the buffer without lifting the lock. In both cases a instance has to connect to 
+ * the memory and call force_remove() to lift the lock (if present) and remove the 
+ * buffer. If all processes are terminated properly then none of this should ever
+ * be an issue.
  *
  * Author: Marco Salathe <msalathe@lbl.gov>
  * Date:   February 2018
@@ -49,7 +53,7 @@ template <class T> class SharedBuffer
       nm     = NULL;
     }
 
-    SharedBuffer<T>(std::string bname, int bsize=65536): mem_name(bname), que_name(bname+"Que"), mut_name(bname+"Mut"), alv_name(bname+"Alv")
+    SharedBuffer<T>(std::string bname, int bsize = 65536): mem_name(bname), que_name(bname+"Que"), mut_name(bname+"Mut"), alv_name(bname+"Alv")
     {
       //assign remaining private variables
       size   = bsize;
@@ -96,9 +100,9 @@ template <class T> class SharedBuffer
       buffer = NULL;
     };
 
-    //initialize or reinitialize the function, mostly a copy of the Constructor
-    //do be used with the standard constructor, which can not initizialize properly
-    void initialize(std::string bname, int bsize=65536)
+    //Initialize or reinitialize the function, mostly a copy of the constructor
+    //do be used with the standard constructor, which can not initizialize properly.
+    void initialize(std::string bname, int bsize = 65536)
     {
       mem_name.assign(bname);
       que_name.assign(bname+"Que");
@@ -115,7 +119,7 @@ template <class T> class SharedBuffer
       nm = new boost::interprocess::named_mutex(boost::interprocess::open_or_create, mut_name.c_str());
       //bool look_ok=boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm); //not really necessary to lock here
 
-      //Create a new segment with given name and size
+      //create a new segment with given name and size
       memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
 
       alive = memory->find_or_construct<bool>(alv_name.c_str())(true);
@@ -134,12 +138,13 @@ template <class T> class SharedBuffer
       }
     };
 
-    //writes to buffer, if buffer size is larger than max_length remove elements
-    //so that max length is assured, if max_length is zero nothing is done
-    int write(T &obj, int max_length=0)
+    //Write to buffer, if buffer size is larger than max_length remove elments until length
+    //of buffer is =< max_length. If max_length is zero then elements are not removed.
+    //It returns 0 on error and 1+number of popped elements on write.
+    int write(T &obj, int max_length = 0)
     {
       if(alive && *alive==false) initialize(mem_name, size); //reconnect or recreate
-      if(buffer==NULL) return 1; //can not write must be wrongly initiated could try to reinitiate
+      if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
       boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
       while(true)
       {
@@ -158,11 +163,13 @@ template <class T> class SharedBuffer
         }
         break;
       }
-      if(max_length>0) while(buffer->size()>max_length) buffer->pop_front();
-      return 0;
+      int stat = 1;
+      if(max_length>0) while(buffer->size()>max_length){ buffer->pop_front(); stat++; }
+      return stat;
     };
 
-    //reads the entire buffer and return
+    //Read the entire buffer and return it, does return an empty vector if buffer is
+    //empty or an error occured.
     std::vector<T> read()
     {
       if(alive && *alive==false) initialize(mem_name, size); //reconnect or recreate
@@ -171,13 +178,15 @@ template <class T> class SharedBuffer
       return std::vector<T> (buffer->begin(), buffer->end());;
     };
 
-    //check if this instance is the owner of the memory
+    //Check if this instance is the owner of the memory.
     bool is_owner()
     { 
       return owner;
     };
 
-    //forcefully destroy shared_memory, we need to recreate with initialize after this call
+    //Destroy shared_memory, we need to recreate it with initialize after this call if
+    //the instance is the owner he might loss ownership if another process recreates the
+    //buffer before the owner can do so.
     void force_remove()
     {
       nm->unlock(); //take ownership

@@ -28,14 +28,15 @@ template <class T> class SharedBuffer
 {
   private:
     boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>> *buffer;
+    bool *alive;
     bool owner;
     int size;
     std::string mem_name;
     std::string que_name;
     std::string mut_name;
+    std::string alv_name;
     boost::interprocess::managed_shared_memory *memory;
     boost::interprocess::named_mutex *nm;
-
 
   public:
     SharedBuffer<T>()
@@ -43,22 +44,26 @@ template <class T> class SharedBuffer
       size   = 0;
       owner  = false;
       buffer = NULL;
+      alive  = NULL;
       memory = NULL;
       nm     = NULL;
     }
 
-    SharedBuffer<T>(std::string bname, int bsize=65536): mem_name(bname), que_name(bname+"Que"), mut_name(bname+"Mut")
+    SharedBuffer<T>(std::string bname, int bsize=65536): mem_name(bname), que_name(bname+"Que"), mut_name(bname+"Mut"), alv_name(bname+"Alv")
     {
       //assign remaining private variables
-      size= bsize;
-      owner = false;
+      size   = bsize;
+      owner  = false;
       buffer = NULL;
+      alive  = NULL;
 
       nm = new boost::interprocess::named_mutex(boost::interprocess::open_or_create, mut_name.c_str());
       //bool look_ok=boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm); //not really necessary to lock here
 
       //Create a new segment with given name and size
       memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
+
+      alive = memory->find_or_construct<bool>(alv_name.c_str())(true);
 
       //try to find the buffer with the same name as the momory block if not found it returns NULL (0)
       buffer = memory->find<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str()).first;
@@ -70,7 +75,7 @@ template <class T> class SharedBuffer
         const boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager> alloc(memory->get_segment_manager());
         //construct a T deque buffer
         buffer = memory->construct<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str())(alloc);
-        owner = true;
+        owner  = true;
       }
     }
 
@@ -78,12 +83,17 @@ template <class T> class SharedBuffer
     {
       if(owner == true)
       {
+        nm->unlock();
+        boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
+        if(alive) *alive = false;
         memory->destroy<T>(que_name.c_str());
         boost::interprocess::shared_memory_object::remove(mem_name.c_str());
         boost::interprocess::named_mutex::remove(mut_name.c_str());
       }
       if(nm!=NULL)     delete nm;
       if(memory!=NULL) delete memory;
+      alive  = NULL;
+      buffer = NULL;
     };
 
     //initialize or reinitialize the function, mostly a copy of the Constructor
@@ -93,9 +103,11 @@ template <class T> class SharedBuffer
       mem_name.assign(bname);
       que_name.assign(bname+"Que");
       mut_name.assign(bname+"Mut");
-      size= bsize;
-      owner = false;
+      alv_name.assign(bname+"Alv");
+      size   = bsize;
+      owner  = false;
       buffer = NULL;
+      alive  = NULL;
 
       if(nm!=NULL) delete nm;
       if(memory!=NULL) delete memory;
@@ -105,6 +117,8 @@ template <class T> class SharedBuffer
 
       //Create a new segment with given name and size
       memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
+
+      alive = memory->find_or_construct<bool>(alv_name.c_str())(true);
 
       //try to find the buffer with the same name as the momory block if not found it returns NULL (0)
       buffer = memory->find<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str()).first;
@@ -124,7 +138,8 @@ template <class T> class SharedBuffer
     //so that max length is assured, if max_length is zero nothing is done
     int write(T &obj, int max_length=0)
     {
-      if(buffer==NULL) return 1; //can not write could try to reconnect with initialize
+      if(alive && *alive==false) initialize(mem_name, size); //reconnect or recreate
+      if(buffer==NULL) return 1; //can not write must be wrongly initiated could try to reinitiate
       boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
       while(true)
       {
@@ -137,6 +152,7 @@ template <class T> class SharedBuffer
             memory->grow(mem_name.c_str(), size);
             delete memory;
             memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
+            alive  = memory->find_or_construct<bool>(alv_name.c_str())(true);
             buffer = memory->find<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str()).first;
             continue;
         }
@@ -149,6 +165,7 @@ template <class T> class SharedBuffer
     //reads the entire buffer and return
     std::vector<T> read()
     {
+      if(alive && *alive==false) initialize(mem_name, size); //reconnect or recreate
       if(buffer==NULL) return std::vector<T>(); //can not read
       boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
       return std::vector<T> (buffer->begin(), buffer->end());;
@@ -163,6 +180,9 @@ template <class T> class SharedBuffer
     //forcefully destroy shared_memory, we need to recreate with initialize after this call
     void force_remove()
     {
+      nm->unlock(); //take ownership
+      boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
+      if(alive) *alive = false;
       memory->destroy<T>(que_name.c_str());
       boost::interprocess::shared_memory_object::remove(mem_name.c_str());
       boost::interprocess::named_mutex::remove(mut_name.c_str());
@@ -171,6 +191,7 @@ template <class T> class SharedBuffer
       memory = NULL;
       nm     = NULL;
       buffer = NULL;
+      alive  = NULL;
       owner  = false;
       size   = 0;
     };

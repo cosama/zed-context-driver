@@ -4,7 +4,7 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/deque.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
-#include <boost/interprocess/sync/named_mutex.hpp>
+#include <boost/interprocess/sync/named_sharable_mutex.hpp>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -40,7 +40,7 @@ template <class T> class SharedBuffer
     std::string mut_name;
     std::string alv_name;
     boost::interprocess::managed_shared_memory *memory;
-    boost::interprocess::named_mutex *nm;
+    boost::interprocess::named_sharable_mutex *nm;
 
   public:
     SharedBuffer<T>()
@@ -61,8 +61,8 @@ template <class T> class SharedBuffer
       buffer = NULL;
       alive  = NULL;
 
-      nm = new boost::interprocess::named_mutex(boost::interprocess::open_or_create, mut_name.c_str());
-      //bool look_ok=boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm); //not really necessary to lock here
+      nm = new boost::interprocess::named_sharable_mutex(boost::interprocess::open_or_create, mut_name.c_str());
+      //bool look_ok=boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm); //not really necessary to lock here
 
       //Create a new segment with given name and size
       memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
@@ -88,11 +88,11 @@ template <class T> class SharedBuffer
       if(owner == true)
       {
         nm->unlock();
-        boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
+        boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
         if(alive) *alive = false;
         memory->destroy<T>(que_name.c_str());
         boost::interprocess::shared_memory_object::remove(mem_name.c_str());
-        boost::interprocess::named_mutex::remove(mut_name.c_str());
+        boost::interprocess::named_sharable_mutex::remove(mut_name.c_str());
       }
       if(nm!=NULL)     delete nm;
       if(memory!=NULL) delete memory;
@@ -116,8 +116,8 @@ template <class T> class SharedBuffer
       if(nm!=NULL) delete nm;
       if(memory!=NULL) delete memory;
 
-      nm = new boost::interprocess::named_mutex(boost::interprocess::open_or_create, mut_name.c_str());
-      //bool look_ok=boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm); //not really necessary to lock here
+      nm = new boost::interprocess::named_sharable_mutex(boost::interprocess::open_or_create, mut_name.c_str());
+      //bool look_ok=boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm); //not really necessary to lock here
 
       //create a new segment with given name and size
       memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
@@ -145,7 +145,7 @@ template <class T> class SharedBuffer
     {
       if(alive && *alive==false) initialize(mem_name, size); //reconnect or recreate
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
-      boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
+      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
       while(true)
       {
         try
@@ -174,7 +174,7 @@ template <class T> class SharedBuffer
     {
       if(alive && *alive==false) initialize(mem_name, size); //reconnect or recreate
       if(buffer==NULL) return std::vector<T>(); //can not read
-      boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
+      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
       return std::vector<T> (buffer->begin(), buffer->end());;
     };
 
@@ -190,11 +190,11 @@ template <class T> class SharedBuffer
     void force_remove()
     {
       nm->unlock(); //take ownership
-      boost::interprocess::scoped_lock<boost::interprocess::named_mutex> lock(*nm);
+      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
       if(alive) *alive = false;
       memory->destroy<T>(que_name.c_str());
       boost::interprocess::shared_memory_object::remove(mem_name.c_str());
-      boost::interprocess::named_mutex::remove(mut_name.c_str());
+      boost::interprocess::named_sharable_mutex::remove(mut_name.c_str());
       delete nm;
       delete memory;
       memory = NULL;

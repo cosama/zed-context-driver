@@ -26,51 +26,36 @@
  ** A set of parameters can be specified in the launch file.                                       **
  ****************************************************************************************************/
 
-#include <csignal>
-#include <cstdio>
-#include <math.h>
-#include <limits>
-#include <thread>
-#include <chrono>
-#include <memory>
-#include <sys/stat.h>
-
-#include <ros/ros.h>
-#include <nodelet/nodelet.h>
-#include <sensor_msgs/Image.h>
-#include <sensor_msgs/CameraInfo.h>
-#include <sensor_msgs/distortion_models.h>
-#include <sensor_msgs/image_encodings.h>
-#include <image_transport/image_transport.h>
-#include <dynamic_reconfigure/server.h>
-#include <zed_wrapper/ZedConfig.h>
-#include <nav_msgs/Odometry.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
-#include <tf2/LinearMath/Quaternion.h>
-#include <tf2_ros/transform_broadcaster.h>
-#include <geometry_msgs/TransformStamped.h>
-
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/calib3d/calib3d.hpp>
+//#include <csignal>
+//#include <cstdio>
+//#include <math.h>
+//#include <limits>
+//#include <thread>
+//#include <chrono>
+//#include <memory>
+//#include <sys/stat.h>
 
 #include <boost/make_shared.hpp>
 
-#include <sensor_msgs/PointCloud2.h>
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
+//#include <sensor_msgs/PointCloud2.h>
+//#include <pcl_conversions/pcl_conversions.h>
+//#include <pcl/point_cloud.h>
+//#include <pcl/point_types.h>
 
 #include <sl/Camera.hpp>
 
-//new for IMU data
-#include <sensor_msgs/Imu.h>
 
+#include <boost/interprocess/containers/vector.hpp>
 
-using namespace std;
+struct Timestamp{
+  long long sec, nsec;
+}
+
+struct SharedPose {
+    float orientation[4];
+    float location[3];
+    Timestamp time;
+}
 
 namespace zed_wrapper {
 
@@ -94,26 +79,14 @@ namespace zed_wrapper {
     }
 
     class ZEDWrapperNodelet : public nodelet::Nodelet {
-        ros::NodeHandle nh;
-        ros::NodeHandle nh_ns;
+
         boost::shared_ptr<boost::thread> device_poll_thread;
-        image_transport::Publisher pub_rgb;
-        image_transport::Publisher pub_raw_rgb;
-        image_transport::Publisher pub_left;
-        image_transport::Publisher pub_raw_left;
-        image_transport::Publisher pub_right;
-        image_transport::Publisher pub_raw_right;
-        image_transport::Publisher pub_depth;
-        ros::Publisher pub_cloud;
-        ros::Publisher pub_rgb_cam_info;
-        ros::Publisher pub_left_cam_info;
-        ros::Publisher pub_right_cam_info;
-        ros::Publisher pub_rgb_cam_info_raw;
-        ros::Publisher pub_left_cam_info_raw;
-        ros::Publisher pub_right_cam_info_raw;
-        ros::Publisher pub_depth_cam_info;
-        ros::Publisher pub_odom;
-        ros::Publisher pub_imu_raw; 
+
+        SharedBuffer <sl::Mat> pub_rect_left;
+        SharedBuffer <sl::Mat> pub_rect_right;
+        //SharedBuffer <???> pub_cloud;
+        SharedBuffer <sl::Pose> pub_odom;
+        SharedBuffer <sl::Pose> pub_imu_raw; 
 
         // tf
         tf2_ros::TransformBroadcaster transform_odom_broadcaster;

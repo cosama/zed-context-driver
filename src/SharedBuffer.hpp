@@ -5,6 +5,7 @@
 #include <boost/interprocess/containers/deque.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/sync/named_sharable_mutex.hpp>
+#include <scoped_allocator>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -31,7 +32,7 @@
 template <class T> class SharedBuffer
 {
   private:
-    boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>> *buffer;
+    boost::interprocess::deque<T, std::scoped_allocator_adaptor<boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>> *buffer;
     bool *alive;
     bool owner;
     int size;
@@ -70,7 +71,7 @@ template <class T> class SharedBuffer
       alive = memory->find_or_construct<bool>(alv_name.c_str())(true);
 
       //try to find the buffer with the same name as the momory block if not found it returns NULL (0)
-      buffer = memory->find<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str()).first;
+      buffer = memory->find<boost::interprocess::deque<T, std::scoped_allocator_adaptor<boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>>(que_name.c_str()).first;
 
       //if the buffer is not find, we are considered the owner of this shared memory and will construct the buffer
       if(!buffer)
@@ -78,7 +79,7 @@ template <class T> class SharedBuffer
         //initialize shared memory STL-compatible allocator
         const boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager> alloc(memory->get_segment_manager());
         //construct a T deque buffer
-        buffer = memory->construct<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str())(alloc);
+        buffer = memory->construct<boost::interprocess::deque<T, std::scoped_allocator_adaptor<boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>>(que_name.c_str())(alloc);
         owner  = true;
       }
     }
@@ -87,8 +88,12 @@ template <class T> class SharedBuffer
     {
       if(owner == true)
       {
-        nm->unlock();
-        boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+        //nm->sharable_lock();
+        //nm->try_unlock_sharable_and_lock();
+        //nm->try_unlock_and_lock();
+        //nm->try_unlock_sharable();
+        //nm->try_unlock();
+        //boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> try_lock(*nm);
         if(alive) *alive = false;
         memory->destroy<T>(que_name.c_str());
         boost::interprocess::shared_memory_object::remove(mem_name.c_str());
@@ -125,7 +130,7 @@ template <class T> class SharedBuffer
       alive = memory->find_or_construct<bool>(alv_name.c_str())(true);
 
       //try to find the buffer with the same name as the momory block if not found it returns NULL (0)
-      buffer = memory->find<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str()).first;
+      buffer = memory->find<boost::interprocess::deque<T, std::scoped_allocator_adaptor<boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>>(que_name.c_str()).first;
 
       //if the buffer is not find, we are considered the owner of this shared memory and will construct the buffer
       if(!buffer)
@@ -133,7 +138,7 @@ template <class T> class SharedBuffer
         //initialize shared memory STL-compatible allocator
         const boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager> alloc(memory->get_segment_manager());
         //construct a T deque buffer
-        buffer = memory->construct<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str())(alloc);
+        buffer = memory->construct<boost::interprocess::deque<T, std::scoped_allocator_adaptor<boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>>(que_name.c_str())(alloc);
         owner = true;
       }
     };
@@ -158,7 +163,7 @@ template <class T> class SharedBuffer
             delete memory;
             memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
             alive  = memory->find_or_construct<bool>(alv_name.c_str())(true);
-            buffer = memory->find<boost::interprocess::deque<T, boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>(que_name.c_str()).first;
+            buffer = memory->find<boost::interprocess::deque<T, std::scoped_allocator_adaptor<boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager>>>>(que_name.c_str()).first;
             continue;
         }
         break;
@@ -175,6 +180,7 @@ template <class T> class SharedBuffer
       if(alive && *alive==false) initialize(mem_name, size); //reconnect or recreate
       if(buffer==NULL) return std::vector<T>(); //can not read
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
+      std::cout << buffer->size() << " " << buffer[0].size() << std::endl;
       return std::vector<T> (buffer->begin(), buffer->end());;
     };
 
@@ -189,8 +195,10 @@ template <class T> class SharedBuffer
     //buffer before the owner can do so.
     void force_remove()
     {
-      nm->unlock(); //take ownership
-      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      //nm->sharable_lock();
+      //nm->try_unlock_sharable_and_lock();
+      //nm->unlock(); //take ownership
+      //boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> try_lock(*nm);
       if(alive) *alive = false;
       memory->destroy<T>(que_name.c_str());
       boost::interprocess::shared_memory_object::remove(mem_name.c_str());

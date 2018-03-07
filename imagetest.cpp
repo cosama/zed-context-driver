@@ -30,26 +30,42 @@
 #include <string.h>
 
 // ZED include
+#include <boost/interprocess/containers/vector.hpp>
 #include <sl_zed/Camera.hpp>
 
 // OpenCV include (for display)
 #include "opencv2/opencv.hpp"
 
+#include "SharedBuffer.hpp"
+
 // Using std and sl namespaces
 using namespace std;
 using namespace sl;
 
-// Sample functions
-//void updateCameraSettings(char key, sl::Camera &zed);
-//void switchCameraSettings();
-
-// Sample variables
-CAMERA_SETTINGS camera_settings_ = CAMERA_SETTINGS_BRIGHTNESS;
-string str_camera_settings = "BRIGHTNESS";
-int step_camera_setting = 1;
-
-
 int main(int argc, char **argv) {
+  cout << "Connect buffer" << endl;
+  SharedBuffer <boost::interprocess::vector<sl::uchar1>> buf("ZedImageBuffer");
+  cout << "buffer connected" << endl;
+
+    if(argc>1)
+    {
+      char key = ' ';
+      while (key != 'q') {
+              cout << "Start reading" << endl;
+              vector<boost::interprocess::vector<sl::uchar1>>outbuf = buf.read();
+              cout << "Buffer length " << outbuf.size() << endl;
+              for(int i=1; i<outbuf.size(); i++)
+              {
+                cout << "   " << outbuf[i].size() << endl;
+                //cv::imshow("VIEW", cv::Mat((int) outbuf[i].getHeight(), (int) outbuf[i].getWidth(), CV_8UC4, outbuf[i].getPtr<sl::uchar1>(sl::MEM_CPU)));
+              }
+              key = cv::waitKey(5);
+          }
+          return 0;
+    }
+
+    //buf.force_remove();
+    //buf.initialize("ZedImageBuffer3");
 
     // Create a ZED Camera object
     Camera zed;
@@ -63,7 +79,7 @@ int main(int argc, char **argv) {
     }
 
     // Print help in console
-    printHelp();
+    //printHelp();
 
     // Print camera information
     printf("ZED Model                 : %s\n", toString(zed.getCameraInformation().camera_model).c_str());
@@ -72,36 +88,29 @@ int main(int argc, char **argv) {
     printf("ZED Camera Resolution     : %dx%d\n", (int) zed.getResolution().width, (int) zed.getResolution().height);
     printf("ZED Camera FPS            : %d\n", (int) zed.getCameraFPS());
 
+    
+    //return 0;
     // Create a Mat to store images
     Mat zed_image;
-    SharedBuffer <Mat> buf("ZedImageBuffer");
+
     
     // Capture new images until 'q' is pressed
     char key = ' ';
     while (key != 'q') {
-        if(buf.owner())
-        {
-          // Check that grab() is successful
-          if (zed.grab() == SUCCESS) {
-              // Retrieve left image
-              zed.retrieveImage(zed_image, VIEW_LEFT);
-              buf.write(zed_image,10);
-
-              // Display image with OpenCV
-              //cv::imshow("VIEW", cv::Mat((int) zed_image.getHeight(), (int) zed_image.getWidth(), CV_8UC4, zed_image.getPtr<sl::uchar1>(sl::MEM_CPU)));
-              //key = cv::waitKey(5);
-
-              // Change camera settings with keyboard
-              //updateCameraSettings(key, zed);
-          } else
-              key = cv::waitKey(5);
-        }
-        else
-        {
-            vector<Mat>outbuf = buf.read();
-            for(int i=1; i<outbuf.size(); i++)
-              cv::imshow("VIEW", cv::Mat((int) outbuf[i].getHeight(), (int) outbuf[i].getWidth(), CV_8UC4, outbuf[i].getPtr<sl::uchar1>(sl::MEM_CPU)));
-        }
+        // Check that grab() is successful
+        if (zed.grab() == SUCCESS) {
+            // Retrieve left image
+            zed.retrieveImage(zed_image, VIEW_LEFT);
+            sl::uchar1 *pstart=zed_image.getPtr<sl::uchar1>(MEM_CPU);
+            //sl::uchar4 *pend=zed_image.getPtr<sl::uchar4>(MEM_CPU);
+            boost::interprocess::vector<sl::uchar1> imvec(pstart, pstart+zed_image.getStepBytes()*zed_image.getHeight());
+            //cv::imshow("VIEW", cv::Mat((int)zed_image.getHeight(), (int)zed_image.getWidth(), CV_8UC4, imvec.data()));
+            //key = cv::waitKey(5);
+            cout << zed_image.getInfos().c_str() << endl;
+            buf.write(imvec,10);
+            cout << "Wrote" << endl;
+        } else
+            key = cv::waitKey(5);
     }
 
     // Exit

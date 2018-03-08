@@ -16,6 +16,7 @@ int main(int argc, char *argv[])
   signal(SIGINT, &handler);
   //boost::interprocess::shared_memory_object::remove("VisualBuffer");
   //boost::interprocess::named_mutex::remove("VisualBufferMut");
+  std::cout << "Create buffer" << std::endl;
   SharedBuffer <int> buf("VisualBuffer");
   std::cout << "We managed to connect/create to the buffer, owner " << buf.is_owner() << std::endl;
 
@@ -28,14 +29,20 @@ int main(int argc, char *argv[])
   int i=0;
   while(stop==false){  //Insert data in the vector
     if(buf.is_owner()){ //buffer can change ownership if the old owner terminated
-      buf.write(i,100000);
+      //std::cout << i << std::endl;
+      int size=buf.write(i);
+      //std::cout << i << std::endl;
+      if(size>100000) buf.pop(size-100000);
+      //std::cout << i << std::endl;
       i++;
       if(i>200000) i=0;
     }
     else{
-      std::vector<int> v=buf.read();
-      for(int i=1; i<v.size(); i++)
-        if(v[i]-v[i-1]!=1) std::cout << "Read " << v[i] << " " << v[i-1] << " at " << i << std::endl;
+      std::vector<int> v;
+      buf.read(v);
+      std::cout << "Read " << v.size() << " elements" << std::endl;
+      //for(int i=1; i<v.size(); i++)
+      //  if(v[i]-v[i-1]!=1) std::cout << "Read " << v[i] << " " << v[i-1] << " at " << i << std::endl;
       //for(auto it = v.begin()+1; it!=v.end(); ++it)  //Insert data in the vector
       //  if(*it-*(it-1)!=1) std::cout << "Read " << *it-*(it-1) << std::endl;
     }

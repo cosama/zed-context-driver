@@ -191,11 +191,12 @@ template <class T> class SharedBuffer
 
     //Writes elements from first to last to the buffer. Returns the size of the buffer.
     template <class InpIt> 
-    int write(InpIt first, InpIt last)
+    int write(InpIt first, InpIt last, bool lock=true)
     {
       if(stat && stat->alive==false) initialize(mem_name, size); //reconnect or recreate
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
-      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      //boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      if(lock) nm->lock();
       while(true)
       {
         try
@@ -213,6 +214,7 @@ template <class T> class SharedBuffer
         }
         break;
       }
+      if(lock) nm->unlock();
       return buffer->size();
     };
 
@@ -227,9 +229,10 @@ template <class T> class SharedBuffer
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
       auto start = buffer->begin();
       auto end = buffer->end();
+      int bsize=buffer->size();
       if(stat && id>=0 && id<stat->size)
       { 
-        if(stat->pop_counter[id]<=buffer->size() && stat->pop_counter[id]>0)
+        if(stat->pop_counter[id]<=bsize && stat->pop_counter[id]>0)
           start+=stat->pop_counter[id];
         stat->pop_counter[id]=buffer->size();
       }
@@ -239,7 +242,7 @@ template <class T> class SharedBuffer
     };
 
     //removes a certain number of elements from the buffer
-    int pop(int num_of_elements)
+    int pop(unsigned int num_of_elements)
     {
       if(num_of_elements<=0) return 0;
       if(stat && stat->alive==false) initialize(mem_name, size); //reconnect or recreate
@@ -269,6 +272,13 @@ template <class T> class SharedBuffer
     void flip_owner()
     { 
       owner = ((owner==true)?false:true);
+    };
+
+    //Changes the ownership from false to true or from true to false
+    void lock(bool lock)
+    { 
+      if(lock) nm->lock();
+      else nm->unlock();
     };
 
     //Get the buffer size, use this with care, as it can be always changed by writing

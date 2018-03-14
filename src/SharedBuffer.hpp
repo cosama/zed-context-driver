@@ -8,18 +8,20 @@
 #include <boost/container/scoped_allocator.hpp>
 #include <string>
 #include <vector>
-#include <iostream>
+//#include <iostream>
 
 /***********************************************************************************
- * Simple class template to share a buffer between processes/threads.
+ * Simple class template to share a buffer between processes/threads. Any standard
+ * type and fixed sized structure/class can be used, as long as memory is not
+ * dynamically allocate (STL containers do not work because of this).
  *
  * Instances can add elements individually by calling the write member function, 
- * however, the whole buffer needs to be read in one go and is returned as a 
+ * however, the whole buffer needs to be read in a chunk and is returned as a 
  * vector (stored to local memory). The memory is locked on read/write thus no 
  * other element will have access at this point. If the owner-process is terminated 
  * without calling the destructor (i.e Ctrl+C) the shared_memory might hang around. 
  * If a process is terminated while it locks the buffer, no other buffer can access
- * the buffer without lifting the lock. In both cases a instance has to connect to 
+ * the buffer without lifting the lock. In both cases an instance has to connect to 
  * the memory and call force_remove() to lift the lock (if present) and remove the 
  * buffer. If all processes are terminated properly then none of this should ever
  * be an issue. The buffer keeps track of how many elements have been already read
@@ -28,9 +30,21 @@
  * Author: Marco Salathe <msalathe@lbl.gov>
  * Date:   March 2018
  *
+ * WHISHLIST:
+ *   * Everything is managed manually through stat, we should just add mutex there
+ *   * STL containers
+ *   * Can the SharedMemory pointer go out of scope?
+ *
  **********************************************************************************/
 
-template <class T> using SharedAllocator =  boost::container::scoped_allocator_adaptor<boost::interprocess::allocator<T, boost::interprocess::managed_shared_memory::segment_manager> >;
+#ifdef USE_MANAGED_SHARED_MEMORY
+typedef boost::interprocess::managed_shared_memory SharedMemory;
+#else
+#include <boost/interprocess/managed_mapped_file.hpp>
+typedef boost::interprocess::managed_mapped_file SharedMemory;
+#endif
+
+template <class T> using SharedAllocator =  boost::container::scoped_allocator_adaptor<boost::interprocess::allocator<T, SharedMemory::segment_manager> >;
 
 template <class T> using BufferContainer = boost::interprocess::deque<T, SharedAllocator<T> >;
 
@@ -38,9 +52,14 @@ template <class T> using BufferContainer = boost::interprocess::deque<T, SharedA
 
 class BufferStatus{
   public:
-  BufferStatus(bool b){ alive=b; size=MAX_CLIENTS; for(int i=0; i<size; i ++) pop_counter[i]=-1; };
+  BufferStatus(bool b, int alloc_size)
+  { 
+    alive=b; mem_size = alloc_size; pop_size=MAX_CLIENTS; 
+    for(int i=0; i<pop_size; i ++) pop_counter[i]=-1; 
+  }
   bool alive;
-  int size;
+  long long mem_size;
+  int pop_size;
   long long pop_counter[MAX_CLIENTS];
 };
 
@@ -50,125 +69,159 @@ template <class T> class SharedBuffer
     BufferContainer<T> *buffer;
     bool owner;
     int id;
-    int size;
+    int alloc_size;
+    int csize;
     std::string mem_name;
-    std::string que_name;
     std::string mut_name;
     std::string sta_name;
-    boost::interprocess::managed_shared_memory *memory;
+    SharedMemory *memory;
     boost::interprocess::named_sharable_mutex *nm;
+    boost::interprocess::managed_shared_memory *stamem;
     BufferStatus *stat;
+
   public:
-    SharedBuffer<T>()
-    {
-      id     = -1;
-      size   = 0;
-      owner  = false;
-      buffer = NULL;
-      stat   = NULL;
-      memory = NULL;
-      nm     = NULL;
-    }
-
-    SharedBuffer<T>(std::string bname, int bsize = 65536): mem_name(bname), que_name(bname+"Que"), mut_name(bname+"Mut"), sta_name(bname+"Sta")
-    {
-      //assign remaining private variables
-      size   = bsize;
-      owner  = false;
-      buffer = NULL;
-      stat   = NULL;
-
-      nm = new boost::interprocess::named_sharable_mutex(boost::interprocess::open_or_create, mut_name.c_str());
-      //bool look_ok=boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm); //not really necessary to lock here
-
-      //Create a new segment with given name and size
-      memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
-
-      stat = memory->find_or_construct<BufferStatus>(sta_name.c_str())(true); //(SharedAllocator<T>(memory->get_segment_manager()));
-      stat->alive=true;
-      int i=0;
-      for(i=0; i<stat->size; i++)
-        if(stat->pop_counter[i]<0){ id=i; stat->pop_counter[i]=0; break; }
-      if(i==stat->size) id=-1; //invalid
-
-      //try to find the buffer with the same name as the momory block if not found it returns NULL (0)
-      buffer = memory->find<BufferContainer<T> >(que_name.c_str()).first;
-
-      //if the buffer is not find, we are considered the owner of this shared memory and will construct the buffer
-      if(!buffer)
-      {
-        //initialize shared memory STL-compatible allocator
-        buffer = memory->construct<BufferContainer<T> >(que_name.c_str())(SharedAllocator<T>(memory->get_segment_manager()));
-        owner  = true;
-      }
-    }
-
-    ~SharedBuffer<T>()
-    {
-      if(stat && id>=0 && id<=stat->size) stat->pop_counter[id]=-1; //unregister
-      if(owner == true)
-      {
-        if(stat) stat->alive = false;
-        memory->destroy<T>(que_name.c_str());
-        boost::interprocess::shared_memory_object::remove(mem_name.c_str());
-        boost::interprocess::named_sharable_mutex::remove(mut_name.c_str());
-      }
-      if(nm!=NULL)     delete nm;
-      if(memory!=NULL) delete memory;
-      id     = -1;
-      stat   = NULL;
-      buffer = NULL;
-    };
-
     //Initialize or reinitialize the function, mostly a copy of the constructor
     //do be used with the standard constructor, which can not initizialize properly.
-    void initialize(std::string bname, int bsize = 65536)
+    //returns 0 if error occurs, otherwise returns 1
+    int initialize(std::string bname = "", int bsize = 0)
     {
-      mem_name.assign(bname);
-      que_name.assign(bname+"Que");
-      mut_name.assign(bname+"Mut");
-      sta_name.assign(bname+"Sta");
-      size   = bsize;
-      owner  = false;
-      buffer = NULL;
-      stat   = NULL;
-
+      //bring memory into a acceptable state
+      owner      = false;
+      buffer     = NULL;
+      stat       = NULL;
       if(nm!=NULL) delete nm;
       if(memory!=NULL) delete memory;
+      if(stamem!=NULL) delete stamem;
 
+      //parse inputs and decide what to do
+      if(!bname.empty())
+      {
+        mem_name.assign(bname);
+        mut_name.assign(bname+"Mut");
+        sta_name.assign(bname+"Sta");
+      }
+      else if(mem_name.empty()) return 0; //no valid name
+      if(bsize==0)
+      {
+        if(alloc_size==0) alloc_size = 1024*1024; //1Mb
+      }
+      else alloc_size = bsize;
+
+      //create lock
       nm = new boost::interprocess::named_sharable_mutex(boost::interprocess::open_or_create, mut_name.c_str());
-      //bool look_ok=boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm); //not really necessary to lock here
 
       //create a new segment with given name and size
-      memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, mem_name.c_str(), size);
+      memory = new SharedMemory(boost::interprocess::open_or_create, mem_name.c_str(), alloc_size);
 
-      stat = memory->find_or_construct<BufferStatus>(sta_name.c_str())(true); //(SharedAllocator<T>(memory->get_segment_manager()));
+      //create status handler
+      stamem = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, sta_name.c_str(), 4096+sizeof(BufferStatus));
+      stat = stamem->find_or_construct<BufferStatus>(sta_name.c_str())(true, alloc_size); //(SharedAllocator<T>(memory->get_segment_manager()));
       stat->alive=true;
+      csize = stat->mem_size;
+
       int i=0;
-      for(i=0; i<stat->size; i++)
+      for(i=0; i<stat->pop_size; i++)
         if(stat->pop_counter[i]<0){ id=i; stat->pop_counter[i]=0; break; }
-      if(i==stat->size) id=-1; //invalid
+      if(i==stat->pop_size) id=-1; //invalid
 
       //try to find the buffer with the same name as the momory block if not found it returns NULL (0)
-      buffer = memory->find<BufferContainer<T> >(que_name.c_str()).first;
+      buffer = memory->find<BufferContainer<T> >(mem_name.c_str()).first;
 
       //if the buffer is not find, we are considered the owner of this shared memory and will construct the buffer
       if(!buffer)
       {
         //initialize shared memory STL-compatible allocator
         const SharedAllocator<T> alloc(memory->get_segment_manager());
+
         //construct a T deque buffer
-        buffer = memory->construct<BufferContainer<T> >(que_name.c_str())(SharedAllocator<T>(memory->get_segment_manager()));
+        buffer = memory->construct<BufferContainer<T> >(mem_name.c_str())(SharedAllocator<T>(memory->get_segment_manager()));
         owner = true;
       }
+      return 1;
+    };
+
+    //Destroy shared_memory, we need to recreate it with initialize after this call if
+    //the instance is the owner he might loss ownership if another process recreates the
+    //buffer before the owner can do so.
+    void force_remove()
+    {
+      if(stat) stat->alive = false;
+      //we do not remove the objects as they will be destroyed anyways once the memory is freed
+      //also destroying them caused errors as we would have to check if they exist.
+      #ifdef USE_MANAGED_SHARED_MEMORY
+      boost::interprocess::shared_memory_object::remove(mem_name.c_str());
+      #else
+      boost::interprocess::file_mapping::remove(mem_name.c_str());
+      #endif
+      boost::interprocess::named_sharable_mutex::remove(mut_name.c_str());
+      boost::interprocess::shared_memory_object::remove(sta_name.c_str());
+      if(nm!=NULL)     delete nm;
+      if(memory!=NULL) delete memory;
+      if(stamem!=NULL) delete stamem;
+      id         = -1;
+      stamem     = NULL;
+      memory     = NULL;
+      nm         = NULL;
+      buffer     = NULL;
+      stat       = NULL;
+      owner      = false;
+    };
+
+    //I might get away with this...
+    int check_stat()
+    {
+      if(stat)
+      {
+        if(stat->mem_size!=csize)
+        {
+          csize=stat->mem_size;
+          delete memory;
+          memory = new SharedMemory(boost::interprocess::open_only, mem_name.c_str());
+          buffer = memory->find<BufferContainer<T> >(mem_name.c_str()).first;
+        }
+        if(stat->alive==false)
+          initialize();
+      }
+    }
+
+    SharedBuffer<T>()
+    {
+      id         = -1;
+      alloc_size = 0;
+      owner      = false;
+      buffer     = NULL;
+      stat       = NULL;
+      memory     = NULL;
+      stamem     = NULL;
+      nm         = NULL;
+    }
+
+    SharedBuffer<T>(std::string bname, int bsize = 65536)
+    {
+      stamem = NULL;
+      memory = NULL;
+      nm     = NULL;
+      initialize(bname, bsize);
+    }
+
+    ~SharedBuffer<T>()
+    {
+      if(stat && id>=0 && id<=stat->pop_size) stat->pop_counter[id]=-1; //unregister
+      if(owner == true) force_remove();
+      if(nm!=NULL)     delete nm;
+      if(memory!=NULL) delete memory;
+      if(stamem!=NULL) delete stamem;
+      id     = -1;
+      stat   = NULL;
+      buffer = NULL;
     };
 
     //Writes one element to the buffer. Returns the size of the buffer
     int write(T &obj)
     {
-      if(stat && stat->alive==false) initialize(mem_name, size); //reconnect or recreate
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      check_stat(); //reconnect or recreate
       while(true)
       {
         try
@@ -177,11 +230,9 @@ template <class T> class SharedBuffer
         }
         catch(boost::interprocess::bad_alloc)
         {
-          memory->grow(mem_name.c_str(), size);
-          delete memory;
-          memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_only, mem_name.c_str());
-          stat = memory->find<BufferStatus>(sta_name.c_str()).first;
-          buffer = memory->find<BufferContainer<T> >(que_name.c_str()).first;
+          if(stat) stat->mem_size+=alloc_size;
+          memory->grow(mem_name.c_str(), alloc_size);
+          check_stat();
           continue;
         }
         break;
@@ -189,14 +240,14 @@ template <class T> class SharedBuffer
       return buffer->size();
     };
 
-    //Writes elements from first to last to the buffer. Returns the size of the buffer.
+    //Writes elements from iterator first to last to the buffer. Returns the size of the buffer.
     template <class InpIt> 
-    int write(InpIt first, InpIt last, bool lock=true)
+    int write(InpIt first, InpIt last)
     {
-      if(stat && stat->alive==false) initialize(mem_name, size); //reconnect or recreate
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
-      //boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
-      if(lock) nm->lock();
+      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      check_stat(); //reconnect or recreate
+      int bsize=buffer->size();
       while(true)
       {
         try
@@ -205,53 +256,86 @@ template <class T> class SharedBuffer
         }
         catch(boost::interprocess::bad_alloc)
         {
-          memory->grow(mem_name.c_str(), size);
-          delete memory;
-          memory = new boost::interprocess::managed_shared_memory(boost::interprocess::open_only, mem_name.c_str());
-          stat = memory->find<BufferStatus>(sta_name.c_str()).first;
-          buffer = memory->find<BufferContainer<T> >(que_name.c_str()).first;
+          if(stat) stat->mem_size+=alloc_size;
+          memory->grow(mem_name.c_str(), alloc_size);
+          check_stat();
           continue;
         }
         break;
       }
-      if(lock) nm->unlock();
       return buffer->size();
     };
 
-
+    //Writes elements from iterator itl[0] to itl[1], etc to buffer. Returns the size 
+    //of the buffer. This can write a whole list of elements to the buffer.
+    template <class InpIt> 
+    int write(std::initializer_list<InpIt> itl)
+    {
+      if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
+      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      check_stat(); //reconnect or recreate
+      int bsize=buffer->size();
+      for(auto it=itl.begin(); it!=itl.end() && (it+1)!=itl.end(); it+=2)
+      {
+        while(true)
+        {
+          try
+          {
+            buffer->insert(buffer->end(), *it, *(it+1));
+          }
+          catch(boost::interprocess::bad_alloc)
+          {
+            if(stat) stat->mem_size+=alloc_size;
+            memory->grow(mem_name.c_str(), alloc_size);
+            check_stat();
+            continue;
+          }
+          break;
+        }
+      }
+      return buffer->size();
+    };
 
     //Read the elements that have been added to the buffers since the last read and adds it to vec.
     //It returns an iterator to vec with the last position
-    typename std::vector<T>::iterator read(std::vector<T> &vec)
+    typename std::vector<T>::iterator read(std::vector<T> &vec, int max_len=0)
     {
-      if(stat && stat->alive==false) initialize(mem_name, size); //reconnect or recreate
+
       if(buffer==NULL) return vec.end(); //can not read
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
-      auto start = buffer->begin();
-      auto end = buffer->end();
+      check_stat(); //reconnect or recreate
       int bsize=buffer->size();
-      if(stat && id>=0 && id<stat->size)
-      { 
-        if(stat->pop_counter[id]<=bsize && stat->pop_counter[id]>0)
+      if(max_len && bsize>max_len) bsize=max_len; 
+
+      auto start = buffer->begin();
+      if(stat && id>=0 && id<stat->pop_size)
+      {
+        if(stat->pop_counter[id]>=bsize) return vec.end();
+        if(stat->pop_counter[id]>0)
+        {
           start+=stat->pop_counter[id];
-        stat->pop_counter[id]=buffer->size();
+          bsize-=stat->pop_counter[id];
+        }
+        stat->pop_counter[id] += bsize;
       }
-      int oldpos=vec.size();
-      if(start!=end) vec.insert(vec.end(), start , end);
+
+      auto end = start + bsize; //less than end...
+      int oldpos = vec.size();
+      vec.insert(vec.end(), start , end); //should never happen 
       return vec.begin()+oldpos;
     };
 
     //removes a certain number of elements from the buffer
-    int pop(unsigned int num_of_elements)
+    int resize(unsigned int new_size)
     {
-      if(num_of_elements<=0) return 0;
-      if(stat && stat->alive==false) initialize(mem_name, size); //reconnect or recreate
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      check_stat(); //reconnect or recreate
+      int pops=buffer->size()-new_size;
+      if(pops<=0) return 0; //nothing to be done
       auto start = buffer->begin();
-      int pops=buffer->size()<num_of_elements?buffer->size():num_of_elements;
       buffer->erase(start, start+pops);
-      if(stat) for(int i = 0; i < stat->size; i++)
+      if(stat) for(int i = 0; i < stat->pop_size; i++)
       { 
         if(stat->pop_counter[i]>0)
         { 
@@ -263,50 +347,29 @@ template <class T> class SharedBuffer
     }
 
     //Check if this instance is the owner of the memory.
-    bool is_owner()
+    inline bool is_owner()
     { 
       return owner;
     };
     
     //Changes the ownership from false to true or from true to false
-    void flip_owner()
+    inline void flip_owner()
     { 
       owner = ((owner==true)?false:true);
     };
 
-    //Changes the ownership from false to true or from true to false
-    void lock(bool lock)
-    { 
-      if(lock) nm->lock();
-      else nm->unlock();
-    };
-
     //Get the buffer size, use this with care, as it can be always changed by writing
     //new elements into the buffer
-    int get_size()
+    inline int size()
     { 
       return buffer->size();
     };
 
-    //Destroy shared_memory, we need to recreate it with initialize after this call if
-    //the instance is the owner he might loss ownership if another process recreates the
-    //buffer before the owner can do so.
-    void force_remove()
-    {
-      if(stat) stat->alive = false;
-      memory->destroy<T>(que_name.c_str());
-      boost::interprocess::shared_memory_object::remove(mem_name.c_str());
-      boost::interprocess::named_sharable_mutex::remove(mut_name.c_str());
-      if(nm!=NULL)     delete nm;
-      if(memory!=NULL) delete memory;
-      id     = -1;
-      memory = NULL;
-      nm     = NULL;
-      buffer = NULL;
-      stat   = NULL;
-      owner  = false;
-      size   = 0;
+    inline std::string name()
+    { 
+      return mem_name;
     };
+
 };
 
 #endif //#ifndef SHAREDBUFFER_HPP

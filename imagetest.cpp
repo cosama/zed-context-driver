@@ -61,25 +61,22 @@ int main(int argc, char **argv) {
 
   if(argc>1)
   {
-    std::cout << "Reading from buffer of size " << buf.get_size() << std::endl;
+    std::cout << "Reading from buffer of size " << buf.size() << std::endl;
 
-    //auto p=buf.read(outbuf);
     int i=0, key;
     while(key != 'q')
     {
       vector<double> outbuf;
       buf.read(outbuf);
       auto p =outbuf.begin();
-      //namedWindow( "Display window", WINDOW_AUTOSIZE );// Create a window for display.
       std::cout << "Printing " << outbuf.size() << std::endl;
       if(outbuf.size()>0){
         C *c=(C*)&*p;
         std::cout << "Printing " << outbuf.size()*sizeof(double)/c->size << " " << c->size << " of " << c->cols << "x" << c->rows << std::endl;
         imshow( "Display window", cv::Mat(c->rows, c->cols, c->type, &*(p+sizeof(C)/sizeof(double))));                   // Show our image inside it.
       }
-            key = cv::waitKey(5);                                          // Wait for a keystroke in the window
-      //p+=sizeof(C)+c->size;
-      //if(p==outbuf.end()) p=buf.read(outbuf);
+      key = cv::waitKey(5);                                          // Wait for a keystroke in the window
+
     }
     //buf.flip_owner();
     return 0;
@@ -102,11 +99,8 @@ int main(int argc, char **argv) {
   std::cout << "Sizes " << sizeof(C)/sizeof(double) << " " << c.size/sizeof(double) << std::endl;
   while('q'!=cv::waitKey(5))
   {
-    buf.lock(true);
-    buf.write(hstart, hstart+sizeof(C)/sizeof(double), false);
-    int cnt=buf.write(pstart, pstart+c.size/sizeof(double), false);
-    buf.lock(false);
-    if(loops>10) buf.pop(sizeof(C)/sizeof(double)+c.size/sizeof(double));
+    int cnt=buf.write({hstart, hstart+sizeof(C)/sizeof(double), pstart, pstart+c.size/sizeof(double)});
+    if(loops>10) buf.resize(10*(sizeof(C)/sizeof(double)+c.size/sizeof(double)));
     std::clock_t end = std::clock();
     std::cout << "Wrote " << cnt << " elements to buffer at " <<  double(end - begin) / CLOCKS_PER_SEC << "sec" << std::endl;
     begin=end;

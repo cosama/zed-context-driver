@@ -9,29 +9,17 @@
  *
  **********************************************************************************/
 
-
-//#include <csignal>
-//#include <cstdio>
-//#include <math.h>
-//#include <limits>
-#include <thread>
-//#include <chrono>
-//#include <memory>
-//#include <sys/stat.h>
-
-#include <iostream>
-#include <chrono>
-typedef std::chrono::system_clock MyClock;
-
-//#include <boost/make_shared.hpp>
-//#include <boost/thread/thread.hpp>
-#include <vector>
-
+//opencv is only used to define the matrix types, this dependency could be removed
 #include <opencv2/core/core.hpp>
 
 #include <sl/Camera.hpp>
-
 #include <SharedBuffer.hpp>
+
+#include <vector>
+#include <iostream>
+#include <chrono>
+#include <thread>
+typedef std::chrono::system_clock MyClock;
 
 //largest common factor of 1280x720 and 672x376
 #define IMAGE_SEND_BITS 768*4
@@ -45,7 +33,7 @@ struct Timestamp{
 //the length of the header defines the block size
 //of an image, the zed images need to be devided
 //by this size
-struct ImageHeader{
+struct ImageHeaderMsg {
   int size;
   int cols;
   int rows;
@@ -55,14 +43,14 @@ struct ImageHeader{
 };
 
 //pose message format
-struct Pose {
+struct PoseMsg {
   Timestamp time;
   float position[3];
   float orientation[4];
 };
 
 //imu message format
-struct Imu {
+struct ImuMsg {
   Timestamp time;
   float orientation[4];
   float angular_velocity[3];
@@ -134,10 +122,10 @@ class ZEDWrapper {
   private:
     std::thread *device_poll_thread;
 
-    SharedBuffer<ImageHeader> pub_left;
-    SharedBuffer<ImageHeader> pub_right;
-    SharedBuffer<Pose> pub_odom;
-    SharedBuffer<Imu> pub_imu;
+    SharedBuffer<ImageHeaderMsg> pub_left;
+    SharedBuffer<ImageHeaderMsg> pub_right;
+    SharedBuffer<PoseMsg> pub_odom;
+    SharedBuffer<ImuMsg> pub_imu;
 
     // Launch file parameters
     int resolution;
@@ -148,6 +136,7 @@ class ZEDWrapper {
     int depth_stabilization;
     int mapping_range;
     int mapping_resolution;
+    int mapping_memory;
 
     // Tracking variables
     sl::Pose pose;
@@ -188,8 +177,8 @@ class ZEDWrapper {
      * \param odom_frame_id : the id of the reference frame of the pose
      * \param t : the ros::Time to stamp the image
      */
-    void publishOdom(sl::Pose odom_in, SharedBuffer<Pose> &pub_odom, Timestamp t, int max_odom) {
-      static Pose odom_data;
+    void publishOdom(sl::Pose odom_in, SharedBuffer<PoseMsg> &pub_odom, Timestamp t, int max_odom) {
+      static PoseMsg odom_data;
 
       odom_data.time.sec  = t.sec;
       odom_data.time.usec = t.usec; // odom_frame
@@ -220,8 +209,8 @@ class ZEDWrapper {
      * \param imu_frame_id : the id of the reference frame of the imu
      * \param t : the ros::Time to stamp the image
      */
-    void publishIMU(sl::IMUData imu_in, SharedBuffer<Imu> &pub_imu, Timestamp t, int max_imu) {
-      static Imu imu_data;
+    void publishIMU(sl::IMUData imu_in, SharedBuffer<ImuMsg> &pub_imu, Timestamp t, int max_imu) {
+      static ImuMsg imu_data;
 
       imu_data.time.sec  = t.sec;
       imu_data.time.usec = t.usec; // odom_frame
@@ -254,12 +243,12 @@ class ZEDWrapper {
      * \param img_frame_id : the id of the reference frame of the image
      * \param t : the ros::Time to stamp the image
      */
-    void publishImage(sl::Mat img_in, SharedBuffer<ImageHeader> &pub_img, Timestamp t, int max_img)
+    void publishImage(sl::Mat img_in, SharedBuffer<ImageHeaderMsg> &pub_img, Timestamp t, int max_img)
     {
-      static int msgsize=sizeof(ImageHeader);
+      static int msgsize=sizeof(ImageHeaderMsg);
       if(img_in.getMemoryType() == sl::MEM_GPU) img_in.updateCPUfromGPU();
 
-      ImageHeader hdr;
+      ImageHeaderMsg hdr;
       hdr.size      = (int)(img_in.getHeight()*img_in.getWidth()*img_in.getPixelBytes());
       hdr.cols      = (int)(img_in.getWidth());
       hdr.rows      = (int)(img_in.getHeight());
@@ -294,7 +283,7 @@ class ZEDWrapper {
           break;
       }
 
-      ImageHeader* img_ptr= (ImageHeader*)img_in.getPtr<sl::uchar1>(sl::MEM_CPU);
+      ImageHeaderMsg* img_ptr= (ImageHeaderMsg*)img_in.getPtr<sl::uchar1>(sl::MEM_CPU);
       int buf_size = pub_img.write({ &hdr, &hdr+1, img_ptr, img_ptr+hdr.size/msgsize });
       if(buf_size>max_img*(hdr.size/msgsize+1))
       {
@@ -328,6 +317,7 @@ class ZEDWrapper {
       sl::SpatialMappingParameters spatial_mapping_params;
       spatial_mapping_params.range_meter = static_cast<sl::SpatialMappingParameters::MAPPING_RANGE> (mapping_range);
       spatial_mapping_params.resolution_meter = static_cast<sl::SpatialMappingParameters::MAPPING_RESOLUTION> (mapping_resolution);
+      spatial_mapping_params.max_memory_usage = mapping_memory;
       spatial_mapping_params.save_texture = false;
       spatial_mapping_params.use_chunk_only = true;
 
@@ -450,12 +440,14 @@ class ZEDWrapper {
           {
             if (std::chrono::duration_cast<std::chrono::milliseconds>(time - tmesh).count()>1e3/mesh_rate)
             {
+                //std::cout << "Request mesh" << std::endl;
                 zed.requestMeshAsync();
                 tmesh = MyClock::now();
             }
 
             if (zed.getMeshRequestStatusAsync() == sl::SUCCESS) {
                 zed.retrieveMeshAsync(mesh) == sl::SUCCESS;
+                //std::cout << "Mesh retrieved, current fps " << zed.getCurrentFPS() << std::endl;
             }
           }
 
@@ -465,14 +457,6 @@ class ZEDWrapper {
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); // No subscribers, we just wait
         }
       } // while loop
-      //if(create_mesh){
-      //    sl::Mesh mesh;
-      //    zed.extractWholeMesh(mesh);
-      //   //mesh.filter(sl::MeshFilterParameters::MESH_FILTER_LOW);
-      //   mesh.save(sl::String(mesh_file.c_str()), sl::MESH_FILE_PLY_BIN);
-      //    NODELET_INFO_STREAM("Mesh file saved to: " << mesh_file);
-      //    zed.disableSpatialMapping();
-      //}
       zed.close();
     }
 
@@ -483,13 +467,14 @@ class ZEDWrapper {
 
     ZEDWrapper()
     {
+      //default loop controls
       limg_on  = false;
       rimg_on  = false;
       odom_on  = false;
       imu_on   = false;
       map_on   = false;
 
-      // Launch file parameters
+      //default camera parameters
       resolution    = sl::RESOLUTION_VGA;
       quality       = sl::DEPTH_MODE_PERFORMANCE;
       sensing_mode  = sl::SENSING_MODE_STANDARD;
@@ -499,9 +484,16 @@ class ZEDWrapper {
       gpu_id        = -1;
       zed_id        = 0;
       serial_number = 0;
-      
+
+      //default mapping parameters
+      mapping_range      = sl::SpatialMappingParameters::MAPPING_RANGE_FAR;
+      mapping_resolution = sl::SpatialMappingParameters::MAPPING_RESOLUTION_LOW;
+      mapping_memory     = 2048; //probably in MBytes
+      //default wrapper parameters
       run_wrapper = false;
       max_buffer_length = 1; //must be an even number for images
+
+
     }
 
 
@@ -510,75 +502,13 @@ class ZEDWrapper {
       device_poll_thread->join();
     }
 
-    void LeftImageTopic(std::string name)
-    {
-      pub_left.initialize(name);
-      if(!pub_left.is_owner()){ pub_left.force_remove(); pub_left.initialize(); }
-      limg_on = true;
-    }
-
-    void RightImageTopic(std::string name)
-    {
-      pub_right.initialize(name);
-      if(!pub_right.is_owner()){ pub_right.force_remove(); pub_right.initialize(); }
-      rimg_on = true;
-    }
-
-    void TrackingTopic(std::string name)
-    {
-      pub_odom.initialize(name);
-      if(!pub_odom.is_owner()){ pub_odom.force_remove(); pub_odom.initialize(); }
-      odom_on = true;
-    }
-
-    void ImuTopic(std::string name)
-    {
-      pub_imu.initialize(name);
-      if(!pub_imu.is_owner()){ pub_imu.force_remove(); pub_imu.initialize(); }
-      rimg_on = true;
-    }
-
-    inline void MappingFlag(bool on)
-    {
-      map_on = on;
-    }
-    
-    inline void ImageResolution(int reso)
-    {
-      resolution = reso;
-    }
-    
-    inline void FrameRate(int hertz)
-    {
-      frame_rate = hertz;
-      std::cout << "Frame rate set to " << frame_rate << std::endl;
-    }
-
-    inline void MeshRate(int hertz)
-    {
-      mesh_rate = hertz;
-      std::cout << "Mesh rate set to " << mesh_rate << std::endl;
-    }
-
-    inline void ImuRate(int hertz)
-    {
-      imu_rate = hertz;
-      std::cout << "Imu rate set to " << imu_rate << std::endl;
-    }
-
-    inline void BufferLength(int len)
-    {
-      max_buffer_length = len;
-      std::cout << "Buffer length set to " << max_buffer_length << std::endl;
-    }
-
     void startWrapperThread()
     {
 
       std::cout << "Initializing the wrapper server" << std::endl;
       if(limg_on) std::cout << "   Start Left Image Topic at " << pub_left.name() << std::endl;
       if(rimg_on) std::cout << "   Start Right Image Topic at " << pub_right.name() << std::endl;
-      if(odom_on) std::cout << "   Start Odometry Topic at " << pub_left.name() << std::endl;
+      if(odom_on) std::cout << "   Start Odometry Topic at " << pub_odom.name() << std::endl;
       if(imu_on)  std::cout << "   Start Imu Topic at " << pub_left.name() << std::endl;
       std::cout << "   Mapping is turned " << (map_on?"on":"off") << std::endl;
       std::cout << "   Buffer length " << max_buffer_length << std::endl;
@@ -625,6 +555,97 @@ class ZEDWrapper {
 
       run_wrapper = true;
       device_poll_thread = new std::thread(&ZEDWrapper::device_poll, this);
+    }
+
+    //all the setter and getter methods
+
+    void setLeftImageTopic(std::string name)
+    {
+      pub_left.initialize(name);
+      if(!pub_left.is_owner()){ pub_left.force_remove(); pub_left.initialize(); }
+      limg_on = true;
+    }
+
+    void setRightImageTopic(std::string name)
+    {
+      pub_right.initialize(name);
+      if(!pub_right.is_owner()){ pub_right.force_remove(); pub_right.initialize(); }
+      rimg_on = true;
+    }
+
+    void setTrackingTopic(std::string name)
+    {
+      pub_odom.initialize(name);
+      if(!pub_odom.is_owner()){ pub_odom.force_remove(); pub_odom.initialize(); }
+      odom_on = true;
+    }
+
+    void setImuTopic(std::string name)
+    {
+      pub_imu.initialize(name);
+      if(!pub_imu.is_owner()){ pub_imu.force_remove(); pub_imu.initialize(); }
+      rimg_on = true;
+    }
+
+    inline void setMappingFlag(bool on)
+    {
+      map_on = on;
+    }
+
+    inline void setImageResolution(int reso)
+    {
+      resolution = reso;
+    }
+    
+    inline void setFrameRate(int hertz)
+    {
+      frame_rate = hertz;
+      std::cout << "Frame rate set to " << frame_rate << std::endl;
+    }
+
+    inline void setMeshRate(int hertz)
+    {
+      mesh_rate = hertz;
+      std::cout << "Mesh rate set to " << mesh_rate << std::endl;
+    }
+
+    inline void setImuRate(int hertz)
+    {
+      imu_rate = hertz;
+      std::cout << "Imu rate set to " << imu_rate << std::endl;
+    }
+
+    inline void setBufferLength(int len)
+    {
+      max_buffer_length = len;
+      std::cout << "Buffer length set to " << max_buffer_length << std::endl;
+    }
+
+
+    inline bool getMappingFlag()
+    {
+      return map_on;
+    }
+
+
+    inline bool getTrackingFlag()
+    {
+      return odom_on;
+    }
+
+    inline bool getImuFlag()
+    {
+      return imu_on;
+    }
+
+    inline bool getLeftImageFlag()
+    {
+      return limg_on;
+    }
+
+    inline bool getRightImageFlag()
+    {
+      return rimg_on;
     }
 }; // class ZEDWrapper
 

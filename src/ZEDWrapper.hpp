@@ -355,14 +355,12 @@ class ZEDWrapper {
           }
           frame_expected = time + frame_time;
 
-          if (odom_on && !tracking_activated) { //Start the tracking
+          if ((depth_stabilization || odom_on) && !tracking_activated) { //Start the tracking
             zed.enableTracking(trackParams);
             tracking_activated = true;
-            depth_stabilization = true;
-          } else if (!odom_on && tracking_activated) { //Stop the tracking
+          } else if (!depth_stabilization && !odom_on && tracking_activated) { //Stop the tracking
             zed.disableTracking();
             tracking_activated = false;
-            depth_stabilization = false;
           }
           computeDepth = map_on + odom_on; // Detect if one of the subscriber need to have the depth information
 
@@ -381,11 +379,9 @@ class ZEDWrapper {
               sl::SPATIAL_MAPPING_STATE state=zed.getSpatialMappingState();
             if(state!=sl::SPATIAL_MAPPING_STATE::SPATIAL_MAPPING_STATE_NOT_ENABLED)
               mapping_activated = true;
-              depth_stabilization = true;
           } else if (!map_on && mapping_activated) {
             zed.disableSpatialMapping();
             mapping_activated = false;
-            depth_stabilization = false;
           }
 
           grab_status = zed.grab(runParams); // Ask to not compute the depth
@@ -416,7 +412,7 @@ class ZEDWrapper {
                   std::this_thread::sleep_for(std::chrono::milliseconds(2000));
               }
               tracking_activated = false;
-              if (depth_stabilization || odom_on) { //Start the tracking
+              if (odom_on) { //Start the tracking
                 zed.enableTracking(trackParams);
                 tracking_activated = true;
               }
@@ -602,6 +598,7 @@ class ZEDWrapper {
 
     void setTrackingTopic(std::string name)
     {
+      depth_stabilization = true;
       pub_odom.initialize(name);
       if(!pub_odom.is_owner()){ pub_odom.force_remove(); pub_odom.initialize(); }
       odom_on = true;
@@ -616,6 +613,7 @@ class ZEDWrapper {
 
     inline void setMappingFlag(bool on)
     {
+      depth_stabilization = true;
       map_on = on;
     }
 

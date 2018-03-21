@@ -133,9 +133,9 @@ class ZEDWrapper {
     int sensing_mode;
     int gpu_id;
     int zed_id;
-    int depth_stabilization;
-    int mapping_range;
-    int mapping_resolution;
+    bool depth_stabilization;
+    double mapping_range;
+    double mapping_resolution;
     int mapping_memory;
 
     // Tracking variables
@@ -150,7 +150,6 @@ class ZEDWrapper {
     // flags
     int confidence;
     bool computeDepth;
-    bool grabbing = false;
 
     // parameters that can be changed
     // during execution
@@ -159,10 +158,11 @@ class ZEDWrapper {
     bool odom_on;
     bool imu_on;
     bool map_on;
+    bool mesh_extracted;
 
-    int frame_rate;
-    int imu_rate;
-    int mesh_rate;
+    double frame_rate;
+    double imu_rate;
+    double mesh_rate;
     int max_buffer_length;
 
     bool run_wrapper;
@@ -315,8 +315,11 @@ class ZEDWrapper {
       sl::TrackingParameters trackParams;
 
       sl::SpatialMappingParameters spatial_mapping_params;
-      spatial_mapping_params.range_meter = static_cast<sl::SpatialMappingParameters::MAPPING_RANGE> (mapping_range);
-      spatial_mapping_params.resolution_meter = static_cast<sl::SpatialMappingParameters::MAPPING_RESOLUTION> (mapping_resolution);
+      spatial_mapping_params.range_meter = mapping_range;           //sl::SpatialMappingParameters::get(static_cast<sl::SpatialMappingParameters::MAPPING_RANGE> (mapping_range));
+      spatial_mapping_params.resolution_meter = mapping_resolution; //sl::SpatialMappingParameters::get(static_cast<sl::SpatialMappingParameters::MAPPING_RESOLUTION> (mapping_resolution));
+
+      std::cout << "Mapping enabled with range " << spatial_mapping_params.range_meter << "m and resolution " << spatial_mapping_params.resolution_meter << "m" << std::endl;
+
       spatial_mapping_params.max_memory_usage = mapping_memory;
       spatial_mapping_params.save_texture = false;
       spatial_mapping_params.use_chunk_only = true;
@@ -352,16 +355,17 @@ class ZEDWrapper {
           }
           frame_expected = time + frame_time;
 
-          if ((depth_stabilization || odom_on) && !tracking_activated) { //Start the tracking
+          if (odom_on && !tracking_activated) { //Start the tracking
             zed.enableTracking(trackParams);
             tracking_activated = true;
-          } else if (!depth_stabilization && !odom_on && tracking_activated) { //Stop the tracking
+            depth_stabilization = true;
+          } else if (!odom_on && tracking_activated) { //Stop the tracking
             zed.disableTracking();
             tracking_activated = false;
+            depth_stabilization = false;
           }
           computeDepth = map_on + odom_on; // Detect if one of the subscriber need to have the depth information
 
-          grabbing = true;
           if (computeDepth) {
             int actual_confidence = zed.getConfidenceThreshold();
             if (actual_confidence != confidence)
@@ -370,19 +374,21 @@ class ZEDWrapper {
           } else
               runParams.enable_depth = false;
 
-          if(map_on && !mapping_activated){
-          if(!tracking_activated) zed.enableTracking(trackParams);
-            zed.enableSpatialMapping(spatial_mapping_params);
-            sl::SPATIAL_MAPPING_STATE state=zed.getSpatialMappingState();
-          if(state!=sl::SPATIAL_MAPPING_STATE::SPATIAL_MAPPING_STATE_NOT_ENABLED)
-            mapping_activated=true;
+          if(map_on && !mapping_activated)
+          {
+            if(!tracking_activated) zed.enableTracking(trackParams);
+              zed.enableSpatialMapping(spatial_mapping_params);
+              sl::SPATIAL_MAPPING_STATE state=zed.getSpatialMappingState();
+            if(state!=sl::SPATIAL_MAPPING_STATE::SPATIAL_MAPPING_STATE_NOT_ENABLED)
+              mapping_activated = true;
+              depth_stabilization = true;
           } else if (!map_on && mapping_activated) {
             zed.disableSpatialMapping();
             mapping_activated = false;
+            depth_stabilization = false;
           }
 
           grab_status = zed.grab(runParams); // Ask to not compute the depth
-          grabbing = false;
 
 
           //std::cout << "Run wrapper " << zed.getCurrentFPS() << std::endl;
@@ -431,7 +437,8 @@ class ZEDWrapper {
 
           // Publish the odometry if someone has subscribed to
           if (odom_on) {
-            zed.getPosition(pose);
+            sl::TRACKING_STATE tracking_error = zed.getPosition(pose);
+            if(tracking_error!=sl::TRACKING_STATE_OK) std::cout << sl::trackingState2str(tracking_error) << std::endl;
             publishOdom(pose, pub_odom, tstamp, max_buffer_length);
           }
 
@@ -446,7 +453,9 @@ class ZEDWrapper {
             }
 
             if (zed.getMeshRequestStatusAsync() == sl::SUCCESS) {
-                zed.retrieveMeshAsync(mesh) == sl::SUCCESS;
+                zed.retrieveMeshAsync(mesh);
+                mesh_extracted = true;
+                //std::cout << "Mesh retrieved with " << mesh.getNumberOfTriangles() << " Triangles" << std::endl;
                 //std::cout << "Mesh retrieved, current fps " << zed.getCurrentFPS() << std::endl;
             }
           }
@@ -461,8 +470,23 @@ class ZEDWrapper {
     }
 
   public:
-    sl::Mesh* getMesh(){
-      return &mesh;
+    int saveMesh(std::string fname){
+      if(map_on)
+      {
+        mesh_extracted = false;
+        while(mesh_extracted == false)
+        {
+          std::this_thread::sleep_for(std::chrono::milliseconds((int)(1.0e3/mesh_rate)));
+        }
+        map_on = false;
+        mesh.updateMeshFromChunkList();
+        mesh.save(fname.c_str(), sl::MESH_FILE_PLY);
+        std::cout << "Mesh saved as " << fname << std::endl;
+        map_on = true;
+        return 1;
+      }
+      std::cout << "Mesh extraction failed" << std::endl;
+      return 0;
     }
 
     ZEDWrapper()
@@ -473,6 +497,7 @@ class ZEDWrapper {
       odom_on  = false;
       imu_on   = false;
       map_on   = false;
+      mesh_extracted = false;
 
       //default camera parameters
       resolution    = sl::RESOLUTION_VGA;
@@ -484,13 +509,15 @@ class ZEDWrapper {
       gpu_id        = -1;
       zed_id        = 0;
       serial_number = 0;
+      confidence    = 100;
 
       //default mapping parameters
-      mapping_range      = sl::SpatialMappingParameters::MAPPING_RANGE_FAR;
-      mapping_resolution = sl::SpatialMappingParameters::MAPPING_RESOLUTION_LOW;
-      mapping_memory     = 2048; //probably in MBytes
+      mapping_range      = sl::SpatialMappingParameters::get(static_cast<sl::SpatialMappingParameters::MAPPING_RANGE> (sl::SpatialMappingParameters::MAPPING_RANGE_FAR));
+      mapping_resolution = sl::SpatialMappingParameters::get(static_cast<sl::SpatialMappingParameters::MAPPING_RESOLUTION> (sl::SpatialMappingParameters::MAPPING_RESOLUTION_LOW));
+      mapping_memory     = 2048; // it is in MBytes
       //default wrapper parameters
       run_wrapper = false;
+      depth_stabilization = false;
       max_buffer_length = 1; //must be an even number for images
 
 
@@ -515,7 +542,7 @@ class ZEDWrapper {
       std::cout << "   Frame rate " << frame_rate << std::endl;
       std::cout << "   Imu rate " << imu_rate << std::endl;
       std::cout << "   Mesh rate " << mesh_rate << std::endl;
-
+      std::cout << "   Confidence " << confidence << std::endl;
 
       // Try to initialize the ZED
       param.camera_fps = frame_rate;
@@ -596,20 +623,40 @@ class ZEDWrapper {
     {
       resolution = reso;
     }
-    
-    inline void setFrameRate(int hertz)
+
+    inline void setConfidence(int conf)
+    {
+      confidence = conf;
+    }
+
+    inline void setMappingResolution(double mres)
+    {
+      mapping_resolution = mres;
+    }
+
+    inline void setMappingRange(double mran)
+    {
+      mapping_range = mran;
+    }
+
+    inline void setQuality(int qual)
+    {
+      quality = qual;
+    }
+
+    inline void setFrameRate(double hertz)
     {
       frame_rate = hertz;
       std::cout << "Frame rate set to " << frame_rate << std::endl;
     }
 
-    inline void setMeshRate(int hertz)
+    inline void setMeshRate(double hertz)
     {
       mesh_rate = hertz;
       std::cout << "Mesh rate set to " << mesh_rate << std::endl;
     }
 
-    inline void setImuRate(int hertz)
+    inline void setImuRate(double hertz)
     {
       imu_rate = hertz;
       std::cout << "Imu rate set to " << imu_rate << std::endl;

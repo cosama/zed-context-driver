@@ -167,8 +167,13 @@ template <class T> class SharedBuffer
       owner      = false;
     };
 
-    //I might get away with this...
-    int check_stat()
+    int check_alive()
+    {
+      if(stat && stat->alive==false)
+        initialize();
+    }
+
+    int check_mem()
     {
       if(stat)
       {
@@ -179,8 +184,6 @@ template <class T> class SharedBuffer
           memory = new SharedMemory(boost::interprocess::open_only, mem_name.c_str());
           buffer = memory->find<BufferContainer<T> >(mem_name.c_str()).first;
         }
-        if(stat->alive==false)
-          initialize();
       }
     }
 
@@ -219,9 +222,10 @@ template <class T> class SharedBuffer
     //Writes one element to the buffer. Returns the size of the buffer
     int write(T &obj)
     {
+      check_alive();
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
-      check_stat(); //reconnect or recreate
+      check_mem(); //reconnect or recreate
       while(true)
       {
         try
@@ -232,7 +236,7 @@ template <class T> class SharedBuffer
         {
           if(stat) stat->mem_size+=alloc_size;
           memory->grow(mem_name.c_str(), alloc_size);
-          check_stat();
+          check_mem();
           continue;
         }
         break;
@@ -244,9 +248,10 @@ template <class T> class SharedBuffer
     template <class InpIt> 
     int write(InpIt first, InpIt last)
     {
+      check_alive();
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
-      check_stat(); //reconnect or recreate
+      check_mem(); //reconnect or recreate
       int bsize=buffer->size();
       while(true)
       {
@@ -258,7 +263,7 @@ template <class T> class SharedBuffer
         {
           if(stat) stat->mem_size+=alloc_size;
           memory->grow(mem_name.c_str(), alloc_size);
-          check_stat();
+          check_mem();
           continue;
         }
         break;
@@ -271,9 +276,10 @@ template <class T> class SharedBuffer
     template <class InpIt> 
     int write(std::initializer_list<InpIt> itl)
     {
+      check_alive();
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
-      check_stat(); //reconnect or recreate
+      check_mem(); //reconnect or recreate
       int bsize=buffer->size();
       for(auto it=itl.begin(); it!=itl.end() && (it+1)!=itl.end(); it+=2)
       {
@@ -287,7 +293,7 @@ template <class T> class SharedBuffer
           {
             if(stat) stat->mem_size+=alloc_size;
             memory->grow(mem_name.c_str(), alloc_size);
-            check_stat();
+            check_mem();
             continue;
           }
           break;
@@ -300,10 +306,10 @@ template <class T> class SharedBuffer
     //It returns an iterator to vec with the last position
     typename std::vector<T>::iterator read(std::vector<T> &vec, int max_len=0)
     {
-
+      check_alive();
       if(buffer==NULL) return vec.end(); //can not read
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
-      check_stat(); //reconnect or recreate
+      check_mem(); //reconnect or recreate
       int bsize=buffer->size();
       if(max_len && bsize>max_len) bsize=max_len; 
 
@@ -328,9 +334,10 @@ template <class T> class SharedBuffer
     //removes a certain number of elements from the buffer
     int resize(unsigned int new_size)
     {
+      check_alive();
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
-      check_stat(); //reconnect or recreate
+      check_mem(); //reconnect or recreate
       int pops=buffer->size()-new_size;
       if(pops<=0) return 0; //nothing to be done
       auto start = buffer->begin();

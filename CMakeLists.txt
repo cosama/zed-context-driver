@@ -27,10 +27,21 @@ link_directories(${Boost_LIBRARY_DIR})
 
 add_definitions(-std=c++11 -g -O3)
 
-ADD_EXECUTABLE(zedtest "zedtest.cpp")
+ADD_EXECUTABLE(zedtester "zedtester.cpp")
+ADD_EXECUTABLE(zeddriver "zeddriver.cpp")
 ADD_EXECUTABLE(buffertest "buffertest.cpp")
 ADD_EXECUTABLE(imagetest "imagetest.cpp")
-ADD_EXECUTABLE(zedwrapper "zedwrapper.cpp")
+
+
+target_link_libraries(zedtester
+                         ${ZED_LIBRARIES}
+                         ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
+                         ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} -lrt -lpthread)
+
+target_link_libraries(zeddriver
+                         ${ZED_LIBRARIES}
+                         ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
+                         ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} -lrt -lpthread)
 
 target_link_libraries(buffertest
                         ${Boost_LIBRARIES} -lrt -lpthread)
@@ -38,12 +49,3 @@ target_link_libraries(buffertest
 target_link_libraries(imagetest
                          ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} -lrt -lpthread)
 
-target_link_libraries(zedtest
-                         ${ZED_LIBRARIES}
-                         ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
-                         ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} -lrt -lpthread)
-
-target_link_libraries(zedwrapper
-                         ${ZED_LIBRARIES}
-                         ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
-                         ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} -lrt -lpthread)

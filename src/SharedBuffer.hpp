@@ -271,8 +271,8 @@ template <class T> class SharedBuffer
       return buffer->size();
     };
 
-    //Writes elements from iterator itl[0] to itl[1], etc to buffer. Returns the size 
-    //of the buffer. This can write a whole list of elements to the buffer.
+    //Writes elements from iterator itl[0] to itl[1], itl[2] to til[3], etc to buffer. Returns 
+    //the size of the buffer. This can write a whole list of elements to the buffer.
     template <class InpIt> 
     int write(std::initializer_list<InpIt> itl)
     {
@@ -302,8 +302,8 @@ template <class T> class SharedBuffer
       return buffer->size();
     };
 
-    //Read the elements that have been added to the buffers since the last read and adds it to vec.
-    //It returns an iterator to vec with the last position
+    //Read the elements that have been added to the buffers since the last read and adds it to 'vec'.
+    //It returns an iterator to vec that points to the initial end of the vector
     typename std::vector<T>::iterator read(std::vector<T> &vec, int max_len=0)
     {
       check_alive();
@@ -327,7 +327,7 @@ template <class T> class SharedBuffer
 
       auto end = start + bsize; //less than end...
       int oldpos = vec.size();
-      vec.insert(vec.end(), start , end); //should never happen 
+      vec.insert(vec.end(), start , end);
       return vec.begin()+oldpos;
     };
 
@@ -359,10 +359,10 @@ template <class T> class SharedBuffer
       return owner;
     };
     
-    //Changes the ownership from false to true or from true to false
-    inline void flip_owner()
+    //Changes the ownership to 'state'
+    inline void set_owner(bool state)
     { 
-      owner = ((owner==true)?false:true);
+      owner = state;
     };
 
     //Get the buffer size, use this with care, as it can be always changed by writing

@@ -124,6 +124,7 @@ class ZEDWrapper {
 
     SharedBuffer<ImageHeaderMsg> pub_left;
     SharedBuffer<ImageHeaderMsg> pub_right;
+    SharedBuffer<ImageHeaderMsg> pub_depth;
     SharedBuffer<PoseMsg> pub_odom;
     SharedBuffer<ImuMsg> pub_imu;
 
@@ -159,11 +160,16 @@ class ZEDWrapper {
     bool imu_on;
     bool map_on;
     bool mesh_extracted;
+    bool depth_on;
+
+    sl::VIEW lv, rv;
 
     double frame_rate;
     double imu_rate;
     double mesh_rate;
     int max_buffer_length;
+
+
 
     bool run_wrapper;
 
@@ -306,8 +312,8 @@ class ZEDWrapper {
       MyClock::time_point frame_expected = old_t+frame_time;
 
       // Get the parameters of the ZED images
-      int width = zed.getResolution().width;
-      int height = zed.getResolution().height;
+      //int width = zed.getResolution().width;
+      //int height = zed.getResolution().height;
 
       sl::RuntimeParameters runParams;
       runParams.sensing_mode = static_cast<sl::SENSING_MODE> (sensing_mode);
@@ -318,13 +324,13 @@ class ZEDWrapper {
       spatial_mapping_params.range_meter = mapping_range;           //sl::SpatialMappingParameters::get(static_cast<sl::SpatialMappingParameters::MAPPING_RANGE> (mapping_range));
       spatial_mapping_params.resolution_meter = mapping_resolution; //sl::SpatialMappingParameters::get(static_cast<sl::SpatialMappingParameters::MAPPING_RESOLUTION> (mapping_resolution));
 
-      std::cout << "Mapping enabled with range " << spatial_mapping_params.range_meter << "m and resolution " << spatial_mapping_params.resolution_meter << "m" << std::endl;
+      if(map_on) std::cout << "Mapping enabled with range " << spatial_mapping_params.range_meter << "m and resolution " << spatial_mapping_params.resolution_meter << "m" << std::endl;
 
       spatial_mapping_params.max_memory_usage = mapping_memory;
       spatial_mapping_params.save_texture = false;
       spatial_mapping_params.use_chunk_only = true;
 
-      sl::Mat leftZEDMat, rightZEDMat;
+      sl::Mat leftZEDMat, rightZEDMat, depthZEDMat;
       // Main loop
       while (run_wrapper) {
         // Check for subscribers
@@ -362,15 +368,12 @@ class ZEDWrapper {
             zed.disableTracking();
             tracking_activated = false;
           }
-          computeDepth = map_on + odom_on; // Detect if one of the subscriber need to have the depth information
+          computeDepth = map_on + odom_on + depth_on; // Detect if one of the subscriber need to have the depth information
 
           if (computeDepth) {
-            int actual_confidence = zed.getConfidenceThreshold();
-            if (actual_confidence != confidence)
-              zed.setConfidenceThreshold(confidence);
             runParams.enable_depth = true; // Ask to compute the depth
           } else
-              runParams.enable_depth = false;
+            runParams.enable_depth = false;
 
           if(map_on && !mapping_activated)
           {
@@ -386,9 +389,7 @@ class ZEDWrapper {
 
           grab_status = zed.grab(runParams); // Ask to not compute the depth
 
-
           //std::cout << "Run wrapper " << zed.getCurrentFPS() << std::endl;
-
           //cout << toString(grab_status) << endl;
           if (grab_status != sl::ERROR_CODE::SUCCESS) { // Detect if a error occurred (for example: the zed have been disconnected) and re-initialize the ZED
             if (grab_status == sl::ERROR_CODE_NOT_A_NEW_FRAME) {
@@ -423,12 +424,16 @@ class ZEDWrapper {
 
           // Publish the image if someone has subscribed to
           if (limg_on) {
-            zed.retrieveImage(leftZEDMat,  sl::VIEW_LEFT);
+            zed.retrieveImage(leftZEDMat, lv);
             publishImage(leftZEDMat,  pub_left,  tstamp, max_buffer_length);
           }
           if (rimg_on) {
-            zed.retrieveImage(rightZEDMat, sl::VIEW_RIGHT);
+            zed.retrieveImage(rightZEDMat, rv);
             publishImage(rightZEDMat, pub_right, tstamp, max_buffer_length);
+          }
+          if (depth_on) {
+            zed.retrieveMeasure(depthZEDMat, sl::MEASURE_DEPTH);
+            publishImage(depthZEDMat, pub_depth, tstamp, max_buffer_length);
           }
 
           // Publish the odometry if someone has subscribed to
@@ -490,6 +495,7 @@ class ZEDWrapper {
       //default loop controls
       limg_on  = false;
       rimg_on  = false;
+      depth_on = false;
       odom_on  = false;
       imu_on   = false;
       map_on   = false;
@@ -514,9 +520,10 @@ class ZEDWrapper {
       //default wrapper parameters
       run_wrapper = false;
       depth_stabilization = false;
-      max_buffer_length = 1; //must be an even number for images
+      max_buffer_length = 1;
 
-
+      lv = sl::VIEW_LEFT;
+      rv = sl::VIEW_RIGHT;
     }
 
 
@@ -525,14 +532,15 @@ class ZEDWrapper {
       device_poll_thread->join();
     }
 
+    //This function is used to start the thread that will run in the background and talks to the ZED
     void startWrapperThread()
     {
-
       std::cout << "Initializing the wrapper server" << std::endl;
-      if(limg_on) std::cout << "   Start Left Image Topic at " << pub_left.name() << std::endl;
-      if(rimg_on) std::cout << "   Start Right Image Topic at " << pub_right.name() << std::endl;
-      if(odom_on) std::cout << "   Start Odometry Topic at " << pub_odom.name() << std::endl;
-      if(imu_on)  std::cout << "   Start Imu Topic at " << pub_left.name() << std::endl;
+      if(limg_on)  std::cout << "   Start Left Image Topic at " << pub_left.name() << std::endl;
+      if(rimg_on)  std::cout << "   Start Right Image Topic at " << pub_right.name() << std::endl;
+      if(depth_on) std::cout << "   Start Depth Topic at " << pub_depth.name() << std::endl;
+      if(odom_on)  std::cout << "   Start Odometry Topic at " << pub_odom.name() << std::endl;
+      if(imu_on)   std::cout << "   Start Imu Topic at " << pub_left.name() << std::endl;
       std::cout << "   Mapping is turned " << (map_on?"on":"off") << std::endl;
       std::cout << "   Buffer length " << max_buffer_length << std::endl;
       std::cout << "   Frame rate " << frame_rate << std::endl;
@@ -574,6 +582,12 @@ class ZEDWrapper {
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
       }
 
+      //make sure exposure/gain/brightness/hue are adjusted automatically
+      zed.setCameraSettings(sl::CAMERA_SETTINGS_EXPOSURE, 0, true);
+
+      //set confidence threshold
+      zed.setConfidenceThreshold(confidence);
+
       serial_number = zed.getCameraInformation().serial_number;
 
       run_wrapper = true;
@@ -596,6 +610,14 @@ class ZEDWrapper {
       rimg_on = true;
     }
 
+    void setDepthTopic(std::string name)
+    {
+      depth_stabilization = true;
+      pub_depth.initialize(name);
+      if(!pub_depth.is_owner()){ pub_depth.force_remove(); pub_depth.initialize(); }
+      depth_on = true;
+    }
+
     void setTrackingTopic(std::string name)
     {
       depth_stabilization = true;
@@ -608,13 +630,19 @@ class ZEDWrapper {
     {
       pub_imu.initialize(name);
       if(!pub_imu.is_owner()){ pub_imu.force_remove(); pub_imu.initialize(); }
-      rimg_on = true;
+      imu_on = true;
     }
 
     inline void setMappingFlag(bool on)
     {
       depth_stabilization = true;
       map_on = on;
+    }
+
+    inline void doNotRectifyImages()
+    {
+      lv = sl::VIEW_LEFT_UNRECTIFIED;
+      rv = sl::VIEW_RIGHT_UNRECTIFIED;
     }
 
     inline void setImageResolution(int reso)
@@ -666,12 +694,15 @@ class ZEDWrapper {
       std::cout << "Buffer length set to " << max_buffer_length << std::endl;
     }
 
-
     inline bool getMappingFlag()
     {
       return map_on;
     }
 
+    inline bool getDepthFlag()
+    {
+      return depth_on;
+    }
 
     inline bool getTrackingFlag()
     {

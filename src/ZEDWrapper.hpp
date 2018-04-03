@@ -10,13 +10,15 @@
  **********************************************************************************/
 
 //opencv is only used to define the matrix types, this dependency could be removed
-#include <opencv2/core/core.hpp>
+//#include <opencv2/core/core.hpp>
+#include <opencv2/opencv.hpp>
 
 #include <sl/Camera.hpp>
 #include <SharedBuffer.hpp>
 
 #include <vector>
 #include <iostream>
+#include <sstream>
 #include <chrono>
 #include <thread>
 typedef std::chrono::system_clock MyClock;
@@ -76,6 +78,43 @@ sl::DeviceProperties getZEDFromSN(unsigned int serial_number) {
     return prop;
 };
 
+int saveZEDMattoImage(std::string prefix, sl::Mat mat, Timestamp time, std::string endfix=std::string("jpg")) {
+  if (mat.getMemoryType() == sl::MEM_GPU)
+      mat.updateCPUfromGPU();
+
+  int cvType;
+  switch (mat.getDataType()) {
+    case sl::MAT_TYPE_32F_C1:
+      cvType = CV_32FC1;
+      break;
+    case sl::MAT_TYPE_32F_C2:
+      cvType = CV_32FC2;
+      break;
+    case sl::MAT_TYPE_32F_C3:
+      cvType = CV_32FC3;
+      break;
+    case sl::MAT_TYPE_32F_C4:
+      cvType = CV_32FC4;
+      break;
+    case sl::MAT_TYPE_8U_C1:
+      cvType = CV_8UC1;
+      break;
+    case sl::MAT_TYPE_8U_C2:
+      cvType = CV_8UC2;
+      break;
+    case sl::MAT_TYPE_8U_C3:
+      cvType = CV_8UC3;
+      break;
+    case sl::MAT_TYPE_8U_C4:
+      cvType = CV_8UC4;
+      break;
+  }
+  cv::Mat cvmat((int) mat.getHeight(), (int) mat.getWidth(), cvType, mat.getPtr<sl::uchar1>(sl::MEM_CPU), mat.getStepBytes(sl::MEM_CPU));
+  std::ostringstream stringStream;
+  stringStream << prefix << time.sec << "." << std::setfill('0') << std::setw(6) << time.usec << "." << endfix; //I can believe it is 2018 and I have to do this...
+  cv::imwrite(stringStream.str(), cvmat);
+  return 1;
+}
 
 //Class to control that the loop is executed at a given frequency
 class LoopTime {
@@ -169,7 +208,10 @@ class ZEDWrapper {
     double mesh_rate;
     int max_buffer_length;
 
-
+    bool bimg_on;
+    std::string bimg_prefix;
+    std::string bimg_endfix;
+    double bimg_rate;
 
     bool run_wrapper;
 
@@ -302,6 +344,7 @@ class ZEDWrapper {
 
       MyClock::time_point old_t = MyClock::now();
       MyClock::time_point tmesh = MyClock::now();
+      MyClock::time_point tbimg = MyClock::now();
       LoopTime loop_time(1e6/(frame_rate>imu_rate?frame_rate:imu_rate)); //micro seconds
 
       sl::ERROR_CODE grab_status;
@@ -334,7 +377,7 @@ class ZEDWrapper {
       // Main loop
       while (run_wrapper) {
         // Check for subscribers
-        bool runLoop = (limg_on + rimg_on + odom_on + imu_on + map_on);
+        bool runLoop = (limg_on + rimg_on + odom_on + imu_on + map_on + bimg_on);
 
         // Run the loop only if there is some subscribers
         if (runLoop) {
@@ -461,6 +504,17 @@ class ZEDWrapper {
             }
           }
 
+          //store images do disk if requested
+          if(bimg_on)
+          {
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(time - tbimg).count()>1e3/bimg_rate)
+            {
+              zed.retrieveImage(leftZEDMat, lv);
+              saveZEDMattoImage(bimg_prefix, leftZEDMat, tstamp, bimg_endfix);
+              tbimg = MyClock::now();
+            }
+          }
+
           loop_time.sleep();
 
         } else {
@@ -524,6 +578,9 @@ class ZEDWrapper {
 
       lv = sl::VIEW_LEFT;
       rv = sl::VIEW_RIGHT;
+
+      bimg_on = false;
+      bimg_rate = 1;
     }
 
 
@@ -632,6 +689,15 @@ class ZEDWrapper {
       if(!pub_imu.is_owner()){ pub_imu.force_remove(); pub_imu.initialize(); }
       imu_on = true;
     }
+
+    void setLocalImageStorage(std::string prefix, double rate, std::string endfix = std::string("jpg"))
+    {
+      bimg_prefix = prefix;
+      bimg_endfix = endfix;
+      bimg_rate = rate;
+      bimg_on = true;
+    }
+
 
     inline void setMappingFlag(bool on)
     {

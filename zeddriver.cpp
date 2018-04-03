@@ -24,7 +24,7 @@ int main(int argc, char** argv)
   //Create a ZEDWrapper object
   ZEDWrapper zed;
 
-  //Read the command line options
+  //Read the command line options (all rates are in Hz)
   int ac=0, debug;
   for(ac=1; ac<argc; ac++)
   {
@@ -46,6 +46,8 @@ int main(int argc, char** argv)
     else if(tmp.compare("--mapping-range")==0)      zed.setMappingRange(std::stof(std::string(argv[++ac])));      //Mapping range in meters (default 10, 20 might be better)
     else if(tmp.compare("--quality")==0)            zed.setQuality(std::stoi(std::string(argv[++ac])));           //Depth extraction method (1 performance, 2 medium, 3 quality, 4 ultra, default 1)
     else if(tmp.compare("--norect")==0)             zed.doNotRectifyImages();                                     //do not rectify images (why would someone ever do that...)
+    else if(tmp.compare("--local")==0)              zed.setLocalImageStorage(std::string(argv[++ac]), 
+                                                      std::stoi(argv[++ac]), std::string(argv[++ac]));            //Enable tracking and define the topic buffer name
     else break;
   }
 

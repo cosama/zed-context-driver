@@ -1,15 +1,3 @@
-#ifndef SHAREDBUFFER_HPP
-#define SHAREDBUFFER_HPP
-
-#include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/containers/deque.hpp>
-#include <boost/interprocess/allocators/allocator.hpp>
-#include <boost/interprocess/sync/named_sharable_mutex.hpp>
-#include <boost/container/scoped_allocator.hpp>
-#include <string>
-#include <vector>
-//#include <iostream>
-
 /***********************************************************************************
  * Simple class template to share a buffer between processes/threads. Any standard
  * type and fixed sized structure/class can be used, as long as memory is not
@@ -36,6 +24,18 @@
  *   * Can the SharedMemory pointer go out of scope?
  *
  **********************************************************************************/
+
+#ifndef SHAREDBUFFER_HPP
+#define SHAREDBUFFER_HPP
+
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/containers/deque.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/sync/named_sharable_mutex.hpp>
+#include <boost/container/scoped_allocator.hpp>
+#include <string>
+#include <vector>
+//#include <iostream>
 
 #ifdef USE_MANAGED_SHARED_MEMORY
 typedef boost::interprocess::managed_shared_memory SharedMemory;

@@ -9,13 +9,22 @@
  *
  **********************************************************************************/
 
-//opencv is only used to define the matrix types, this dependency could be removed
-//#include <opencv2/core/core.hpp>
+#ifndef ZEDWRAPPER_HPP
+#define ZEDWRAPPER_HPP
+
+//OpenCV is to define the matrix types and to save images to disk
 #include <opencv2/opencv.hpp>
 
+//ZED SDK
 #include <sl/Camera.hpp>
+
+//Shared memory buffer wrapper
 #include <SharedBuffer.hpp>
 
+//Message defintions
+#include <MsgDefinition.hpp>
+
+//STL
 #include <vector>
 #include <iostream>
 #include <sstream>
@@ -23,42 +32,7 @@
 #include <thread>
 typedef std::chrono::system_clock MyClock;
 
-//largest common factor of 1280x720 and 672x376
-#define IMAGE_SEND_BITS 768*4
-
-//time stamp format similar to C's timeval
-struct Timestamp{
-  long long sec, usec;
-};
-
-//image header format
-//the length of the header defines the block size
-//of an image, the zed images need to be devided
-//by this size
-struct ImageHeaderMsg {
-  int size;
-  int cols;
-  int rows;
-  int type;
-  Timestamp time;
-  char pad[IMAGE_SEND_BITS-16];
-};
-
-//pose message format
-struct PoseMsg {
-  Timestamp time;
-  float position[3];
-  float orientation[4];
-};
-
-//imu message format
-struct ImuMsg {
-  Timestamp time;
-  float orientation[4];
-  float angular_velocity[3];
-  float linear_acceleration[3];
-};
-
+//Some general purpose functions from the zed-ros-wrapper
 int checkCameraReady(unsigned int serial_number) {
     int id = -1;
     auto f = sl::Camera::getDeviceList();
@@ -116,6 +90,105 @@ int saveZEDMattoImage(std::string prefix, sl::Mat mat, Timestamp time, std::stri
   return 1;
 }
 
+cv::Mat convertRodrigues(sl::float3 r) {
+  double theta = sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
+  cv::Mat R = cv::Mat::eye(3, 3, CV_32F);
+
+  if (theta < DBL_EPSILON) {
+    return R;
+  } else {
+    double c = cos(theta);
+    double s = sin(theta);
+    double c1 = 1. - c;
+    double itheta = theta ? 1. / theta : 0.;
+
+    r *= itheta;
+
+    cv::Mat rrt = cv::Mat::eye(3, 3, CV_32F);
+    float* p = (float*) rrt.data;
+    p[0] = r.x * r.x;
+    p[1] = r.x * r.y;
+    p[2] = r.x * r.z;
+    p[3] = r.x * r.y;
+    p[4] = r.y * r.y;
+    p[5] = r.y * r.z;
+    p[6] = r.x * r.z;
+    p[7] = r.y * r.z;
+    p[8] = r.z * r.z;
+
+    cv::Mat r_x = cv::Mat::eye(3, 3, CV_32F);
+    p = (float*) r_x.data;
+    p[0] = 0;
+    p[1] = -r.z;
+    p[2] = r.y;
+    p[3] = r.z;
+    p[4] = 0;
+    p[5] = -r.x;
+    p[6] = -r.y;
+    p[7] = r.x;
+    p[8] = 0;
+
+    // R = cos(theta)*I + (1 - cos(theta))*r*rT + sin(theta)*[r_x]
+    R = c * cv::Mat::eye(3, 3, CV_32F) + c1 * rrt + s*r_x;
+  }
+  return R;
+}
+
+CameraInfo fillCamInfo(sl::Camera& zed, sl::VIEW view) {
+
+  CameraInfo cam_info = {0}; //set everything to zero
+
+  cam_info.width  = zed.getResolution().width;
+  cam_info.height = zed.getResolution().height;
+
+  sl::CalibrationParameters zedParam;
+  sl::CameraParameters camParam;
+  cv::Mat R_; float *p;
+  for (int i = 0; i < 3; i++) cam_info.R[i + i * 3] = 1;
+
+  switch(view)
+  {
+    case sl::VIEW_LEFT:
+      zedParam = zed.getCameraInformation().calibration_parameters;
+      camParam = zedParam.left_cam;
+      cam_info.rectified = true;
+      break;
+    case sl::VIEW_RIGHT:
+      zedParam = zed.getCameraInformation().calibration_parameters;
+      camParam = zedParam.right_cam;
+      cam_info.P[3] = (-1 * zedParam.left_cam.fx * zedParam.T[0]);
+      cam_info.rectified = true;
+      break;
+    case sl::VIEW_LEFT_UNRECTIFIED:
+      zedParam = zed.getCameraInformation().calibration_parameters_raw;
+      camParam = zedParam.left_cam;
+      cam_info.rectified = false;
+      break;
+    case sl::VIEW_RIGHT_UNRECTIFIED:
+      zedParam = zed.getCameraInformation().calibration_parameters_raw;
+      camParam = zedParam.right_cam;
+      cam_info.P[3] = (-1 * zedParam.left_cam.fx * zedParam.T[0]);
+      R_ = convertRodrigues(zedParam.R); p = (float*)R_.data;
+      for (int i = 0; i < 9; i++) cam_info.R[i] = p[i];
+      cam_info.rectified = false;
+      break;
+  }
+
+  cam_info.D[0] = camParam.disto[0];   // k1
+  cam_info.D[1] = camParam.disto[1];   // k2
+  cam_info.D[2] = camParam.disto[4];   // k3
+  cam_info.D[3] = camParam.disto[2];   // p1
+  cam_info.D[4] = camParam.disto[3];   // p2
+
+  cam_info.K[0] = cam_info.P[0]  = camParam.fx;
+  cam_info.K[2] = cam_info.P[2]  = camParam.cx;
+  cam_info.K[4] = cam_info.P[5]  = camParam.fy;
+  cam_info.K[5] = cam_info.P[6]  = camParam.cy;
+  cam_info.K[8] = cam_info.P[10] = 1.0;
+
+  return cam_info;
+}
+
 //Class to control that the loop is executed at a given frequency
 class LoopTime {
   private:
@@ -156,6 +229,7 @@ class LoopTime {
     }
 };
 
+//the actual zed wrapper class
 class ZEDWrapper {
 
   private:
@@ -202,6 +276,8 @@ class ZEDWrapper {
     bool depth_on;
 
     sl::VIEW lv, rv;
+    CameraInfo info_left, info_right;
+    bool autocalibration;
 
     double frame_rate;
     double imu_rate;
@@ -213,18 +289,14 @@ class ZEDWrapper {
     std::string bimg_endfix;
     double bimg_rate;
 
+
     bool run_wrapper;
 
     //we handle the mesh differently no shared memory here
     sl::Mesh mesh;
 
 
-    /* \brief Publish the pose of the camera with a ros Publisher
-     * \param base_transform : Transformation representing the camera pose from base frame
-     * \param pub_odom : the publisher object to use
-     * \param odom_frame_id : the id of the reference frame of the pose
-     * \param t : the ros::Time to stamp the image
-     */
+    //publish odometry data to a shared memory buffer
     void publishOdom(sl::Pose odom_in, SharedBuffer<PoseMsg> &pub_odom, Timestamp t, int max_odom) {
       static PoseMsg odom_data;
 
@@ -251,12 +323,7 @@ class ZEDWrapper {
     }
 
 
-    /* \brief Publish the IMU data of the mini camera with a ros Publisher
-     * \param IMUDATA : IMUData from Mini
-     * \param pub_imu_raw : the publisher object to use
-     * \param imu_frame_id : the id of the reference frame of the imu
-     * \param t : the ros::Time to stamp the image
-     */
+    // publish imu data to a shared memory buffer
     void publishIMU(sl::IMUData imu_in, SharedBuffer<ImuMsg> &pub_imu, Timestamp t, int max_imu) {
       static ImuMsg imu_data;
 
@@ -285,21 +352,18 @@ class ZEDWrapper {
   }
 
 
-    /* \brief Publish a cv::Mat image with a ros Publisher
-     * \param img : the image to publish
-     * \param pub_img : the publisher object to use
-     * \param img_frame_id : the id of the reference frame of the image
-     * \param t : the ros::Time to stamp the image
-     */
+    // publish an image (stored as an ZED SDK Matrix) to a shared memory buffer
     void publishImage(sl::Mat img_in, SharedBuffer<ImageHeaderMsg> &pub_img, Timestamp t, int max_img)
     {
       static int msgsize=sizeof(ImageHeaderMsg);
       if(img_in.getMemoryType() == sl::MEM_GPU) img_in.updateCPUfromGPU();
 
       ImageHeaderMsg hdr;
-      hdr.size      = (int)(img_in.getHeight()*img_in.getWidth()*img_in.getPixelBytes());
-      hdr.cols      = (int)(img_in.getWidth());
-      hdr.rows      = (int)(img_in.getHeight());
+      hdr.size       = (int)(img_in.getHeight()*img_in.getWidth()*img_in.getPixelBytes());
+      hdr.block_size = msgsize;
+      hdr.block_nmb  = hdr.size/hdr.block_size;
+      hdr.cols       = (int)(img_in.getWidth());
+      hdr.rows       = (int)(img_in.getHeight());
 
       hdr.time.sec  = t.sec;
       hdr.time.usec = t.usec;
@@ -332,10 +396,10 @@ class ZEDWrapper {
       }
 
       ImageHeaderMsg* img_ptr= (ImageHeaderMsg*)img_in.getPtr<sl::uchar1>(sl::MEM_CPU);
-      int buf_size = pub_img.write({ &hdr, &hdr+1, img_ptr, img_ptr+hdr.size/msgsize });
-      if(buf_size>max_img*(hdr.size/msgsize+1))
+      int buf_size = pub_img.write({ &hdr, &hdr+1, img_ptr, img_ptr+hdr.block_nmb });
+      if(buf_size>max_img*(hdr.block_nmb+1))
       {
-        pub_img.resize(max_img*(hdr.size/msgsize+1));
+        pub_img.resize(max_img*(hdr.block_nmb+1));
       }
 
     }
@@ -520,6 +584,11 @@ class ZEDWrapper {
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); // No subscribers, we just wait
         }
+        if(autocalibration){
+          //make sure exposure/gain/brightness/hue are adjusted automatically
+          zed.setCameraSettings(sl::CAMERA_SETTINGS_EXPOSURE, 0, true);
+          autocalibration = false;
+        }
       } // while loop
       zed.close();
     }
@@ -554,6 +623,7 @@ class ZEDWrapper {
       imu_on   = false;
       map_on   = false;
       mesh_extracted = false;
+      autocalibration = false;
 
       //default camera parameters
       resolution    = sl::RESOLUTION_VGA;
@@ -593,17 +663,18 @@ class ZEDWrapper {
     void startWrapperThread()
     {
       std::cout << "Initializing the wrapper server" << std::endl;
-      if(limg_on)  std::cout << "   Start Left Image Topic at " << pub_left.name() << std::endl;
-      if(rimg_on)  std::cout << "   Start Right Image Topic at " << pub_right.name() << std::endl;
-      if(depth_on) std::cout << "   Start Depth Topic at " << pub_depth.name() << std::endl;
-      if(odom_on)  std::cout << "   Start Odometry Topic at " << pub_odom.name() << std::endl;
-      if(imu_on)   std::cout << "   Start Imu Topic at " << pub_left.name() << std::endl;
-      std::cout << "   Mapping is turned " << (map_on?"on":"off") << std::endl;
-      std::cout << "   Buffer length " << max_buffer_length << std::endl;
-      std::cout << "   Frame rate " << frame_rate << std::endl;
-      std::cout << "   Imu rate " << imu_rate << std::endl;
-      std::cout << "   Mesh rate " << mesh_rate << std::endl;
-      std::cout << "   Confidence " << confidence << std::endl;
+      std::cout << "   Left Image Topic  : " << (limg_on?pub_left.name():std::string("off")) << std::endl;
+      std::cout << "   Right Image Topic : " << (rimg_on?pub_right.name():std::string("off")) << std::endl;
+      std::cout << "   Depth Topic       : " << (depth_on?pub_depth.name():std::string("off")) << std::endl;
+      std::cout << "   Odometry Topic    : " << (odom_on?pub_odom.name():std::string("off")) << std::endl;
+      std::cout << "   Imu Topic         : " << (imu_on?pub_left.name():std::string("off")) << std::endl;
+      std::cout << "   Mapping           : " << (map_on?"on":"off") << std::endl;
+      std::cout << "   Buffer length     : " << max_buffer_length << std::endl;
+      std::cout << "   Frame rate        : " << frame_rate << std::endl;
+      std::cout << "   Imu rate          : " << imu_rate << std::endl;
+      std::cout << "   Mesh rate         : " << mesh_rate << std::endl;
+      std::cout << "   Confidence        : " << confidence << std::endl;
+      std::cout << "   Rectified         : " << ((lv == sl::VIEW_LEFT && rv == sl::VIEW_RIGHT)?"True":"False") << std::endl;
 
       // Try to initialize the ZED
       param.camera_fps = frame_rate;
@@ -639,13 +710,24 @@ class ZEDWrapper {
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
       }
 
+      std::cout << "Connect ZED" << std::endl;
+      std::cout << "   ZED Model                 : " << toString(zed.getCameraInformation().camera_model) << std::endl;
+      std::cout << "   ZED Serial Number         : " << zed.getCameraInformation().serial_number << std::endl;
+      std::cout << "   ZED Firmware              : " << zed.getCameraInformation().firmware_version << std::endl;
+      std::cout << "   ZED Camera Resolution     : " << zed.getResolution().width << "x" << zed.getResolution().height << std::endl;
+      std::cout << "   ZED Camera FPS            : " << zed.getCameraFPS() << std::endl;
+
       //make sure exposure/gain/brightness/hue are adjusted automatically
       zed.setCameraSettings(sl::CAMERA_SETTINGS_EXPOSURE, 0, true);
+      autocalibration = false;
 
       //set confidence threshold
       zed.setConfidenceThreshold(confidence);
 
       serial_number = zed.getCameraInformation().serial_number;
+
+      info_left  = fillCamInfo(zed, lv);
+      info_right = fillCamInfo(zed, rv);
 
       run_wrapper = true;
       device_poll_thread = new std::thread(&ZEDWrapper::device_poll, this);
@@ -709,6 +791,11 @@ class ZEDWrapper {
     {
       lv = sl::VIEW_LEFT_UNRECTIFIED;
       rv = sl::VIEW_RIGHT_UNRECTIFIED;
+    }
+
+    inline void doAutoCalibration()
+    {
+      autocalibration = true;
     }
 
     inline void setImageResolution(int reso)
@@ -789,5 +876,17 @@ class ZEDWrapper {
     {
       return rimg_on;
     }
+
+    inline CameraInfo getLeftCamaraInfo()
+    {
+      return info_left;
+    }
+
+    inline CameraInfo getRightCamaraInfo()
+    {
+      return info_right;
+    }
+
 }; // class ZEDWrapper
 
+#endif //#ifndef ZEDWRAPPER_HPP

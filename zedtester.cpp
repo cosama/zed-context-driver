@@ -16,7 +16,7 @@
 
 // ZED Wrapper (for messages) and shared buffer includes
 #include "SharedBuffer.hpp"
-#include "ZEDWrapper.hpp"
+#include "MsgDefinition.hpp"
 
 // Using std and sl namespaces
 using namespace std;
@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
 
           imshow( "Display window", mymat );                //prepare the image in a window
           key = cv::waitKey(5);                             //show the image and wait for a keystroke in the window
-          p+=(c->size)/sizeof(ImageHeaderMsg);              //move the pointer to the header of the next image
+          p+=c->block_nmb;                                  //move the pointer to the header of the next image
 
           //the rest is to print the image retrieval frequency and image data to the terminal
           std::chrono::system_clock::time_point time = std::chrono::system_clock::now();
@@ -78,7 +78,8 @@ int main(int argc, char **argv) {
           last_time=time;
           time_sum+=delta; time_cnt++;
           if(time_sum>1e6){
-            std::cout << "Extracted an image of " << c->cols << "x" << c->rows << " (" << c->size << "blocks and " << c-> type << "type) at " << 1e6*time_cnt/time_sum << "Hz" << std::endl; 
+          std::cout << "Extracted an image of " << c->cols << "x" << c->rows << " (" << c->size << "bytes, type "
+                    << c-> type << ") at " << 1e6*time_cnt/time_sum << "Hz" << std::endl; 
             time_sum=0; time_cnt=0;
           };
         }

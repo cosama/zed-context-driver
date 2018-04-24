@@ -42,6 +42,7 @@ struct PoseMsg {
   Timestamp time;
   float position[3];
   float orientation[4];
+  float confidence;
 };
 
 //imu message format

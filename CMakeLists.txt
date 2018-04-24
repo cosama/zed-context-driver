@@ -1,12 +1,12 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.4)
-PROJECT(zed-context-driver)
+cmake_minimum_required(VERSION 2.4)
+project(zed-context-driver)
 
 if(COMMAND cmake_policy)
 	cmake_policy(SET CMP0003 OLD)
 	cmake_policy(SET CMP0015 OLD)
 endif(COMMAND cmake_policy)
 
-SET(EXECUTABLE_OUTPUT_PATH ".")
+set(EXECUTABLE_OUTPUT_PATH ".")
 
 find_package(ZED 2 REQUIRED)
 find_package(CUDA ${ZED_CUDA_VERSION} EXACT REQUIRED)
@@ -27,25 +27,56 @@ link_directories(${Boost_LIBRARY_DIR})
 
 add_definitions(-std=c++11 -g -O3)
 
-ADD_EXECUTABLE(zedtester "zedtester.cpp")
-ADD_EXECUTABLE(zeddriver "zeddriver.cpp")
-ADD_EXECUTABLE(buffertest "buffertest.cpp")
-ADD_EXECUTABLE(imagetest "imagetest.cpp")
+add_executable(zedtester "zedtester.cpp")
+add_executable(zeddriver "zeddriver.cpp")
+add_executable(buffertest "buffertest.cpp")
+add_executable(imagetest "imagetest.cpp")
 
+add_library(zedwrapper SHARED src/ZEDWrapperPublic.cpp)
 
 target_link_libraries(zedtester
                          ${ZED_LIBRARIES}
                          ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
-                         ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} -lrt -lpthread)
+                         ${OpenCV_LIBRARIES} -lrt -lpthread)
 
 target_link_libraries(zeddriver
-                         ${ZED_LIBRARIES}
+                         zedwrapper ${ZED_LIBRARIES}
                          ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
-                         ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} -lrt -lpthread)
+                         ${OpenCV_LIBRARIES} -lrt -lpthread)
 
-target_link_libraries(buffertest
-                        ${Boost_LIBRARIES} -lrt -lpthread)
+target_link_libraries(buffertest -lrt -lpthread)
 
 target_link_libraries(imagetest
-                         ${OpenCV_LIBRARIES} ${Boost_LIBRARIES} -lrt -lpthread)
+                         ${OpenCV_LIBRARIES} -lrt -lpthread)
 
+
+#set(directory delivery)
+#set(CMAKE_INSTALL_PREFIX ${delivery})
+#install(DIRECTORY DESTINATION ${directory})
+#install(TARGETS zedwrapper DESTINATION ${CMAKE_INSTALL_PREFIX} EXPORT myproj-targets)
+#install(EXPORT myproj-targets DESTINATION ${CMAKE_INSTALL_PREFIX})
+
+
+
+
+set(directory delivery)
+add_custom_target(delivery ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${directory})
+add_custom_command(
+        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ZEDWrapperPublic.hpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/ZEDWrapperPublic.hpp)
+add_custom_command(
+        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ZEDMsgDefinition.hpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/ZEDMsgDefinition.hpp)
+add_custom_command(
+        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_CURRENT_SOURCE_DIR}/delivery/zeddriver.cpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/zeddriver.cpp)
+add_custom_command(
+        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_CURRENT_BINARY_DIR}/libzedwrapper.so ${CMAKE_CURRENT_BINARY_DIR}/${directory}/libzedwrapper.so)
+add_custom_command(
+        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_CURRENT_BINARY_DIR}/zedtester ${CMAKE_CURRENT_BINARY_DIR}/${directory}/zedtester)
+add_custom_command(
+        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_CURRENT_SOURCE_DIR}/delivery/CMakeLists.txt ${CMAKE_CURRENT_BINARY_DIR}/${directory}/CMakeLists.txt)

@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
 
       //the owner of the buffer creates and cleans up the shared buffer and usually writes to the buffer
       //it should be false (0) if another process is writting and owning the buffer
-      std::cerr << "buffer connected as owner " << buf.is_owner() << std::endl;
+      std::cerr << "buffer connected as owner " << buf.is_owner() << " " << buf.size() << std::endl;
 
       //read the pictures until 'q' is pressed (the opencv window must be open and selected for this to work)
       char key = ' ';
@@ -107,7 +107,8 @@ int main(int argc, char **argv) {
         auto p=buf2.read(outbuf);  //read the messages from the buffer and move the iterator to the begining (always at outbuf[0] in this case)
         while(p!=outbuf.end())     //print all the values that are currently stored to the local buffer (outbuf)
         {
-          std::cout << p->time.sec << "." << setfill('0') << setw(6) << p->time.usec << setfill(' ') << setw(0) << " " << p->position[0] << " " << p->position[1] << " " << p->position[2] << std::endl;
+          std::cout << p->time.sec << "." << setfill('0') << setw(6) << p->time.usec << setfill(' ') << setw(0) << " " << p->position[0] << " " << p->position[1] << " " << p->position[2] << " " 
+           << p->orientation[0] << " " << p->orientation[1] << " " << p->orientation[2] << " " << p->orientation[3] << std::endl;
           p++;
         }
       }

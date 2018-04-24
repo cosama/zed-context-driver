@@ -23,6 +23,7 @@
 
 //Message defintions
 #include <MsgDefinition.hpp>
+#include <ZEDMsgDefinition.hpp>
 
 //STL
 #include <vector>
@@ -277,6 +278,7 @@ class ZEDWrapper {
 
     sl::VIEW lv, rv;
     CameraInfo info_left, info_right;
+    sl::Transform imu_trans;
     bool autocalibration;
 
     double frame_rate;
@@ -295,6 +297,8 @@ class ZEDWrapper {
     //we handle the mesh differently no shared memory here
     sl::Mesh mesh;
 
+    //svo playback for debugging
+    std::string svo_filename;
 
     //publish odometry data to a shared memory buffer
     void publishOdom(sl::Pose odom_in, SharedBuffer<PoseMsg> &pub_odom, Timestamp t, int max_odom) {
@@ -305,14 +309,15 @@ class ZEDWrapper {
 
       // Add all value in odometry message
       sl::Translation pos = odom_in.getTranslation();
-      odom_data.position[0]    = pos(2);
-      odom_data.position[1]    = pos(0);
-      odom_data.position[2]    = pos(1);
+      odom_data.position[0]    = pos(0); //2
+      odom_data.position[1]    = pos(1); //0
+      odom_data.position[2]    = pos(2); //1
       sl::Orientation rot = odom_in.getOrientation();
-      odom_data.orientation[0] =  rot(2);
-      odom_data.orientation[1] = -rot(0);
-      odom_data.orientation[2] = -rot(1);
-      odom_data.orientation[3] =  rot(3);
+      odom_data.orientation[0] =  rot(0); //2
+      odom_data.orientation[1] =  rot(1); //-0
+      odom_data.orientation[2] =  rot(2); //-1
+      odom_data.orientation[3] =  rot(3); //3
+      odom_data.confidence = odom_in.pose_confidence;
 
       // Publish odometry message
       int buf_size = pub_odom.write(odom_data);
@@ -455,7 +460,6 @@ class ZEDWrapper {
 
           //update rates, so that they can be dynamically set
           loop_time.set(frame_rate>imu_rate?frame_rate:imu_rate);
-          frame_time = std::chrono::microseconds((int)(1e6 / frame_rate));
 
           // Publish the IMU if someone has subscribed to
           if (imu_on) {
@@ -466,6 +470,7 @@ class ZEDWrapper {
           if(frame_expected>time){ 
             loop_time.sleep(); continue; //goon nothing to be done at this point
           }
+          frame_time = std::chrono::microseconds((int)(1e6 / frame_rate));
           frame_expected = time + frame_time;
 
           if ((depth_stabilization || odom_on) && !tracking_activated) { //Start the tracking
@@ -677,21 +682,26 @@ class ZEDWrapper {
       std::cout << "   Rectified         : " << ((lv == sl::VIEW_LEFT && rv == sl::VIEW_RIGHT)?"True":"False") << std::endl;
 
       // Try to initialize the ZED
-      param.camera_fps = frame_rate;
-      param.camera_resolution = static_cast<sl::RESOLUTION> (resolution);
-      if (serial_number == 0)
-        param.camera_linux_id = zed_id;
-      else {
-        bool waiting_for_camera = true;
-        while (waiting_for_camera) {
-          sl::DeviceProperties prop = getZEDFromSN(serial_number);
-          if (prop.id < -1 || prop.camera_state == sl::CAMERA_STATE::CAMERA_STATE_NOT_AVAILABLE) {
-            std::string msg = "ZED SN" + std::to_string(serial_number) + " not detected ! Please connect this ZED";
-            std::cout << msg.c_str() << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-          } else {
-            waiting_for_camera = false;
-            param.camera_linux_id = prop.id;
+      if (!svo_filename.empty())
+          param.svo_input_filename = svo_filename.c_str();
+      else
+      {
+        param.camera_fps = frame_rate;
+        param.camera_resolution = static_cast<sl::RESOLUTION> (resolution);
+        if (serial_number == 0)
+          param.camera_linux_id = zed_id;
+        else {
+          bool waiting_for_camera = true;
+          while (waiting_for_camera) {
+            sl::DeviceProperties prop = getZEDFromSN(serial_number);
+            if (prop.id < -1 || prop.camera_state == sl::CAMERA_STATE::CAMERA_STATE_NOT_AVAILABLE) {
+              std::string msg = "ZED SN" + std::to_string(serial_number) + " not detected ! Please connect this ZED";
+              std::cout << msg.c_str() << std::endl;
+              std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+            } else {
+              waiting_for_camera = false;
+              param.camera_linux_id = prop.id;
+            }
           }
         }
       }
@@ -728,6 +738,8 @@ class ZEDWrapper {
 
       info_left  = fillCamInfo(zed, lv);
       info_right = fillCamInfo(zed, rv);
+      //imu_trans = zed.camera_imu_transform(); //TODO: enable this
+
 
       run_wrapper = true;
       device_poll_thread = new std::thread(&ZEDWrapper::device_poll, this);
@@ -786,6 +798,12 @@ class ZEDWrapper {
       depth_stabilization = true;
       map_on = on;
     }
+
+    inline void setLocalImageStorageFlag(bool on)
+    {
+      bimg_on = on;
+    }
+
 
     inline void doNotRectifyImages()
     {
@@ -847,6 +865,11 @@ class ZEDWrapper {
       std::cout << "Buffer length set to " << max_buffer_length << std::endl;
     }
 
+    inline void setSVOFile(std::string svo_file)
+    {
+      svo_filename = svo_file;
+    }
+
     inline bool getMappingFlag()
     {
       return map_on;
@@ -887,6 +910,151 @@ class ZEDWrapper {
       return info_right;
     }
 
+    void fillZEDConfiguration(ZEDContextStreamConfiguration &conf, 
+      const CameraInfo &info, ZEDGridPositionAndOrientation pose, const int id)
+    {
+      conf.componentPositionAndOrientation = pose;
+      conf.videoConfiguration.componentPositionAndOrientation = pose;
+      conf.videoConfiguration.componentId = id;
+      conf.videoConfiguration.intrinsics.K.clear();
+      conf.videoConfiguration.intrinsics.P.clear();
+      if(id>=3)
+      {
+        conf.videoConfiguration.fileName = "";
+        conf.videoConfiguration.framesPerSecond = 0;
+        conf.videoConfiguration.verticalResolution   = 0;
+        conf.videoConfiguration.horizontalResolution = 0;
+        conf.videoConfiguration.isRectified = 0;
+        conf.videoConfiguration.isDeBayered = 0;
+        conf.videoConfiguration.intrinsics.fx = 0;
+        conf.videoConfiguration.intrinsics.cx = 0;
+        conf.videoConfiguration.intrinsics.fy = 0;
+        conf.videoConfiguration.intrinsics.cy = 0;
+        conf.videoConfiguration.verticalFOV   = 0; 
+        conf.videoConfiguration.horizontalFOV = 0;
+      }
+
+      if(id<=2)
+      {
+        conf.videoConfiguration.fileName = "";
+        conf.videoConfiguration.framesPerSecond = frame_rate;
+        conf.videoConfiguration.verticalResolution   = info.height;
+        conf.videoConfiguration.horizontalResolution = info.width;
+        conf.videoConfiguration.isRectified = info.rectified;
+        conf.videoConfiguration.isDeBayered = true; //i think so
+        double cx=info.P[2], cy=info.P[6], fx=info.P[0], fy=info.P[5];
+        conf.videoConfiguration.intrinsics.fx = fx;
+        conf.videoConfiguration.intrinsics.cx = cx;
+        conf.videoConfiguration.intrinsics.fy = fy;
+        conf.videoConfiguration.intrinsics.cy = cy;
+        conf.videoConfiguration.intrinsics.K.push_back(info.D[0]);
+        conf.videoConfiguration.intrinsics.K.push_back(info.D[1]);
+        conf.videoConfiguration.intrinsics.K.push_back(info.D[4]);
+        conf.videoConfiguration.intrinsics.P.push_back(info.D[2]);
+        conf.videoConfiguration.intrinsics.P.push_back(info.D[3]);
+        conf.videoConfiguration.verticalFOV   = 45/atan(1)*(atan(cy/fy) + 
+                             atan((conf.videoConfiguration.verticalResolution-cy)/fy)); 
+        conf.videoConfiguration.horizontalFOV = 45/atan(1)*(atan(cx/fx) + 
+                             atan((conf.videoConfiguration.horizontalResolution-cx)/fx));
+      }
+    }
+
+    std::vector <ZEDContextStreamDefinition> getZEDStreamDefinitions()
+    {
+      std::vector <ZEDContextStreamDefinition> msg_arr;
+
+      ZEDContextStreamDefinition msg;
+      msg.formatVersion = "1.0";
+      msg.documentationURI = "no documentation available yet";
+
+      msg.component.componentName = "ZEDMini";
+      msg.component.vendorName    = "Stereolabs";
+      msg.component.serialNumber  = std::to_string(serial_number);
+
+      ZEDGridPositionAndOrientation pose;
+
+      long long ts = std::chrono::duration_cast<std::chrono::milliseconds>(MyClock::now().time_since_epoch()).count();
+      msg.configuration.timeStamp = ts;
+      msg.configuration.videoConfiguration.timeStamp = ts;
+
+      if(limg_on)
+      {
+        pose.position[0]=0;
+        pose.position[1]=0;
+        pose.position[2]=0;
+        pose.rotation[0]=0;
+        pose.rotation[1]=0;
+        pose.rotation[2]=0;
+        pose.rotation[3]=1;
+        msg.streamFormat  = "ImageHeaderMsg:Left";
+        msg.streamAddress = pub_left.name();
+        fillZEDConfiguration(msg.configuration, info_left, pose, 0);
+        msg_arr.push_back(msg);
+      }
+      if(rimg_on)
+      {
+        pose.position[0]=-1*info_right.P[3]/info_right.P[0];
+        pose.position[1]=0;
+        pose.position[2]=0;
+        pose.rotation[0]=0;
+        pose.rotation[1]=0;
+        pose.rotation[2]=0;
+        pose.rotation[3]=1;
+        msg.streamFormat  = "ImageHeaderMsg:Right";
+        msg.streamAddress = pub_right.name();
+        fillZEDConfiguration(msg.configuration, info_right, pose, 1);
+        msg_arr.push_back(msg);
+      }
+      if(depth_on)
+      {
+        pose.position[0]=0;
+        pose.position[1]=0;
+        pose.position[2]=0;
+        pose.rotation[0]=0;
+        pose.rotation[1]=0;
+        pose.rotation[2]=0;
+        pose.rotation[3]=1;
+        msg.streamFormat  = "ImageHeaderMsg:Depth";
+        msg.streamAddress = pub_right.name();
+        fillZEDConfiguration(msg.configuration, info_left, pose, 2);
+        msg_arr.push_back(msg);
+      }
+      if(odom_on)
+      {
+        pose.position[0]=0;
+        pose.position[1]=0;
+        pose.position[2]=0;
+        pose.rotation[0]=0;
+        pose.rotation[1]=0;
+        pose.rotation[2]=0;
+        pose.rotation[3]=1;
+        msg.streamFormat  = "PoseMsg";
+        msg.streamAddress = pub_odom.name();
+        fillZEDConfiguration(msg.configuration, info_left, pose, 3);
+        msg.configuration.videoConfiguration.framesPerSecond = frame_rate;
+        msg_arr.push_back(msg);
+      }
+      if(imu_on)
+      {
+        sl::Translation pos = imu_trans.getTranslation();
+        pose.position[0]=pos(0);
+        pose.position[1]=pos(1);
+        pose.position[2]=pos(2);
+        sl::Orientation rot = imu_trans.getOrientation();
+        pose.rotation[0]=rot(0);
+        pose.rotation[1]=rot(1);
+        pose.rotation[2]=rot(2);
+        pose.rotation[3]=rot(3);
+        msg.streamFormat  = "ImuMsg";
+        msg.streamAddress = pub_imu.name();
+        fillZEDConfiguration(msg.configuration, info_left, pose, 4);
+        msg.configuration.videoConfiguration.framesPerSecond = imu_rate;
+        msg_arr.push_back(msg);
+      }
+      return msg_arr;
+    }
+
 }; // class ZEDWrapper
+
 
 #endif //#ifndef ZEDWRAPPER_HPP

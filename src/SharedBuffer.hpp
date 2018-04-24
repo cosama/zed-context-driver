@@ -369,7 +369,9 @@ template <class T> class SharedBuffer
     //new elements into the buffer
     inline int size()
     { 
-      return buffer->size();
+      if(buffer!=NULL)
+        return buffer->size();
+      else return -1;
     };
 
     inline std::string name()

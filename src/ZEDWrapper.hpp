@@ -551,7 +551,7 @@ class ZEDWrapper {
           // Publish the odometry if someone has subscribed to
           if (odom_on) {
             sl::TRACKING_STATE tracking_error = zed.getPosition(pose);
-            if(tracking_error!=sl::TRACKING_STATE_OK) std::cout << sl::trackingState2str(tracking_error) << std::endl;
+            if(tracking_error!=sl::TRACKING_STATE_OK) std::cout << sl::toString(tracking_error) << std::endl;
             publishOdom(pose, pub_odom, tstamp, max_buffer_length);
           }
 
@@ -738,7 +738,7 @@ class ZEDWrapper {
 
       info_left  = fillCamInfo(zed, lv);
       info_right = fillCamInfo(zed, rv);
-      //imu_trans = zed.camera_imu_transform(); //TODO: enable this
+      imu_trans = zed.getCameraInformation().camera_imu_transform; //TODO: Marco: Seems to be a bug in the SDK
 
 
       run_wrapper = true;
@@ -1015,7 +1015,7 @@ class ZEDWrapper {
         pose.rotation[2]=0;
         pose.rotation[3]=1;
         msg.streamFormat  = "ImageHeaderMsg:Depth";
-        msg.streamAddress = pub_right.name();
+        msg.streamAddress = pub_depth.name();
         fillZEDConfiguration(msg.configuration, info_left, pose, 2);
         msg_arr.push_back(msg);
       }

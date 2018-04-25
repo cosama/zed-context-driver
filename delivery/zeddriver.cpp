@@ -95,6 +95,7 @@ int main(int argc, char** argv)
     else if(tmp.compare("--norect")==0)             zed.doNotRectifyImages();                                     //do not rectify images (why would someone ever do that...)
     else if(tmp.compare("--local")==0)              zed.setLocalImageStorage(std::string(argv[++ac]), 
                                                       std::stoi(argv[++ac]), std::string(argv[++ac]));            //Store images to a location on the hard disk at a certain rate (arg2 == prefix, arg3 == rate, arg4 == endfix)
+    else if(tmp.compare("--svo")==0)                zed.setSVOFile(std::string(argv[++ac]));                      //Replays a svo-file
     else break;
   }
 

@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
 
   // Create a Mat to store images
   cv::Mat zed_image;
-  zed_image = cv::imread("../bike.jpg", CV_LOAD_IMAGE_COLOR);
+  zed_image = cv::imread("../bike.jpg");
   if(! zed_image.data )                              // Check for invalid input
   {
     std::cout <<  "Could not open or find the image" << std::endl ;

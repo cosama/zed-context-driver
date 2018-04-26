@@ -2,7 +2,7 @@
 
 * Ubuntu 16.04
  (best installed with Jetpack 3.2 (https://developer.nvidia.com/embedded/jetpack)
-* CUDA-9.0 (also best installed with Jetpack 3.2
+* CUDA-9.0 (also best installed with Jetpack 3.2)
 * ZED SDK v2.4 for TX2 (https://download.stereolabs.com/zedsdk/2.4/tegrax2)
 * cmake (`sudo apt-get install cmake`)
 
@@ -12,7 +12,7 @@ cd to the folder in a terminal and call `mkdir build && cd build && cmake .. && 
 
 ## Detail on included scripts / program
 
-### lib/liblibzedwrapper.so include/ZEDWrapperPublic.hpp
+### lib/libzedwrapper.so include/ZEDWrapperPublic.hpp
 
 The shared library and the respective header file to access it.
 

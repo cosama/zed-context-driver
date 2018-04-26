@@ -55,13 +55,6 @@ target_link_libraries(imagetest
 set(directory delivery)
 add_custom_target(delivery ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${directory})
-
-add_custom_command(
-        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/ZEDWrapperPublic.hpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/ZEDWrapperPublic.hpp)
-add_custom_command(
-        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/ZEDMsgDefinition.hpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/ZEDMsgDefinition.hpp)
 add_custom_command(
         TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_CURRENT_SOURCE_DIR}/delivery/zeddriver.cpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/zeddriver.cpp)
@@ -73,9 +66,18 @@ add_custom_command(
         ${CMAKE_CURRENT_SOURCE_DIR}/delivery/CMakeLists.txt ${CMAKE_CURRENT_BINARY_DIR}/${directory}/CMakeLists.txt)
 
 add_custom_target(delivery_libs ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${directory}/libs)
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${directory}/lib)
 add_custom_command(
         TARGET delivery_libs POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_CURRENT_BINARY_DIR}/libzedwrapper.so ${CMAKE_CURRENT_BINARY_DIR}/${directory}/libs/libzedwrapper.so)
+        ${CMAKE_CURRENT_BINARY_DIR}/libzedwrapper.so ${CMAKE_CURRENT_BINARY_DIR}/${directory}/lib/libzedwrapper.so)
 add_custom_command(
-        TARGET delivery_libs POST_BUILD COMMAND strip --strip-all ${CMAKE_CURRENT_BINARY_DIR}/${directory}/libs/libzedwrapper.so)
+        TARGET delivery_libs POST_BUILD COMMAND strip --strip-all ${CMAKE_CURRENT_BINARY_DIR}/${directory}/lib/libzedwrapper.so)
+
+add_custom_target(delivery_incs ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${directory}/include)
+add_custom_command(
+        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/ZEDWrapperPublic.hpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/include/ZEDWrapperPublic.hpp)
+add_custom_command(
+        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/ZEDMsgDefinition.hpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/include/ZEDMsgDefinition.hpp)

@@ -11,11 +11,11 @@ set(EXECUTABLE_OUTPUT_PATH ".")
 find_package(ZED 2 REQUIRED)
 find_package(CUDA ${ZED_CUDA_VERSION} EXACT REQUIRED)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 link_directories(${ZED_LIBRARY_DIR})
 link_directories(${CUDA_LIBRARY_DIRS})
-link_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs)
+link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib)
 
 add_definitions(-std=c++11 -g -O3)
 

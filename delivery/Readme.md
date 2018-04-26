@@ -32,7 +32,7 @@ Any of the options can be passed independently of each other or together. For mo
 
 A precompiled script that can be used to read information stored by libzedwrapper to shared buffers. Use it by calling:
 
-* Display image data from a shared buffer topic: `./zedtester MySharedBufferOdometryTopicName image`
+* Display image data from a shared buffer topic: `./zedtester MySharedBufferLeftImageTopicName image`
 
 * Printing odometry data to the terminal (stdout): `./zedtester MySharedBufferOdometryTopicName odom`
 

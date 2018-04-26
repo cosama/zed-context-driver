@@ -64,6 +64,9 @@ add_custom_command(
 add_custom_command(
         TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_CURRENT_SOURCE_DIR}/delivery/CMakeLists.txt ${CMAKE_CURRENT_BINARY_DIR}/${directory}/CMakeLists.txt)
+add_custom_command(
+        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_CURRENT_SOURCE_DIR}/delivery/Readme.md ${CMAKE_CURRENT_BINARY_DIR}/${directory}/Readme.md)
 
 add_custom_target(delivery_libs ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${directory}/lib)

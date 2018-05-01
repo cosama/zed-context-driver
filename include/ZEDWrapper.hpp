@@ -507,6 +507,11 @@ class ZEDWrapper {
           //cout << toString(grab_status) << endl;
           if (grab_status != sl::ERROR_CODE::SUCCESS) { // Detect if a error occurred (for example: the zed have been disconnected) and re-initialize the ZED
             if (grab_status == sl::ERROR_CODE_NOT_A_NEW_FRAME) {
+              if(zed.getSVONumberOfFrames()>=0 && zed.getSVONumberOfFrames() == zed.getSVOPosition())
+              {
+                run_wrapper = false;
+                break;
+              }
               std::cout << "Wait for a new image to proceed" << std::endl;
             } else std::cout << toString(grab_status) << std::endl;
 
@@ -518,7 +523,7 @@ class ZEDWrapper {
               std::cout << "Re-opening the ZED" << std::endl;
               sl::ERROR_CODE err = sl::ERROR_CODE_CAMERA_NOT_DETECTED;
               while (err != sl::SUCCESS) {
-                int id = checkCameraReady(serial_number);
+                int id = checkCameraReady(serial_number); 
                 if (id > 0) {
                   param.camera_linux_id = id;
                   err = zed.open(param); // Try to initialize the ZED

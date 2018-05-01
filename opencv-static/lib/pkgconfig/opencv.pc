@@ -1,6 +1,6 @@
 # Package Information for pkg-config
 
-prefix=/home/nvidia/Repositories/opencv/build/static
+prefix=/home/nvidia/Repositories/repos/opencv/build/static
 exec_prefix=${prefix}
 libdir=${exec_prefix}/lib
 includedir_old=${prefix}/include/opencv
@@ -8,7 +8,6 @@ includedir_new=${prefix}/include
 
 Name: OpenCV
 Description: Open Source Computer Vision Library
-Version: 4.0.0
-Libs: -L${exec_prefix}/lib -lopencv_highgui -lopencv_imgcodecs -lopencv_imgproc -lopencv_core
-Libs.private: -L${exec_prefix}/share/OpenCV/3rdparty/lib -llibjpeg -llibpng -L/usr/lib/aarch64-linux-gnu -lz -ldl -lm -lpthread -lrt
+Version: 2.4.13.6
+Libs: -L${exec_prefix}/lib -lopencv_highgui -llibpng -llibjpeg -lopencv_imgproc -lopencv_core -lgthread-2.0 -lfreetype -lfontconfig -lglib-2.0 -lgobject-2.0 -lpango-1.0 -lpangoft2-1.0 -lgio-2.0 -lgdk_pixbuf-2.0 -lcairo -latk-1.0 -lpangocairo-1.0 -lgdk-x11-2.0 -lgtk-x11-2.0 -L/usr/lib/aarch64-linux-gnu -lz -lrt -lpthread -lm -ldl -lstdc++
 Cflags: -I${includedir_old} -I${includedir_new}

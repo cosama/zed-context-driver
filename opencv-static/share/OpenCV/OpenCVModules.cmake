@@ -16,7 +16,7 @@ set(CMAKE_IMPORT_FILE_VERSION 1)
 set(_targetsDefined)
 set(_targetsNotDefined)
 set(_expectedTargets)
-foreach(_expectedTarget libjpeg libpng opencv_core opencv_imgproc opencv_imgcodecs opencv_highgui)
+foreach(_expectedTarget libjpeg libpng opencv_core opencv_imgproc opencv_highgui)
   list(APPEND _expectedTargets ${_expectedTarget})
   if(NOT TARGET ${_expectedTarget})
     list(APPEND _targetsNotDefined ${_expectedTarget})
@@ -57,28 +57,21 @@ set_target_properties(libpng PROPERTIES
 add_library(opencv_core STATIC IMPORTED)
 
 set_target_properties(opencv_core PROPERTIES
-  INTERFACE_LINK_LIBRARIES "\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>;/usr/lib/aarch64-linux-gnu/libz.so"
+  INTERFACE_LINK_LIBRARIES "\$<LINK_ONLY:stdc++>;\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>;/usr/lib/aarch64-linux-gnu/libz.so;\$<LINK_ONLY:stdc++>;\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>"
 )
 
 # Create imported target opencv_imgproc
 add_library(opencv_imgproc STATIC IMPORTED)
 
 set_target_properties(opencv_imgproc PROPERTIES
-  INTERFACE_LINK_LIBRARIES "opencv_core;\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>"
-)
-
-# Create imported target opencv_imgcodecs
-add_library(opencv_imgcodecs STATIC IMPORTED)
-
-set_target_properties(opencv_imgcodecs PROPERTIES
-  INTERFACE_LINK_LIBRARIES "opencv_core;opencv_imgproc;\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>;/usr/lib/aarch64-linux-gnu/libz.so;\$<LINK_ONLY:libjpeg>;\$<LINK_ONLY:libpng>"
+  INTERFACE_LINK_LIBRARIES "opencv_core;opencv_core;\$<LINK_ONLY:stdc++>;\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>;\$<LINK_ONLY:stdc++>;\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>"
 )
 
 # Create imported target opencv_highgui
 add_library(opencv_highgui STATIC IMPORTED)
 
 set_target_properties(opencv_highgui PROPERTIES
-  INTERFACE_LINK_LIBRARIES "opencv_core;opencv_imgproc;opencv_imgcodecs;\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>"
+  INTERFACE_LINK_LIBRARIES "opencv_core;opencv_imgproc;opencv_core;opencv_imgproc;\$<LINK_ONLY:stdc++>;\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>;\$<LINK_ONLY:gtk-x11-2.0>;\$<LINK_ONLY:gdk-x11-2.0>;\$<LINK_ONLY:pangocairo-1.0>;\$<LINK_ONLY:atk-1.0>;\$<LINK_ONLY:cairo>;\$<LINK_ONLY:gdk_pixbuf-2.0>;\$<LINK_ONLY:gio-2.0>;\$<LINK_ONLY:pangoft2-1.0>;\$<LINK_ONLY:pango-1.0>;\$<LINK_ONLY:gobject-2.0>;\$<LINK_ONLY:glib-2.0>;\$<LINK_ONLY:fontconfig>;\$<LINK_ONLY:freetype>;\$<LINK_ONLY:gthread-2.0>;\$<LINK_ONLY:glib-2.0>;\$<LINK_ONLY:stdc++>;\$<LINK_ONLY:dl>;\$<LINK_ONLY:m>;\$<LINK_ONLY:pthread>;\$<LINK_ONLY:rt>;/usr/lib/aarch64-linux-gnu/libz.so;\$<LINK_ONLY:libjpeg>;\$<LINK_ONLY:libpng>;\$<LINK_ONLY:gtk-x11-2.0>;\$<LINK_ONLY:gdk-x11-2.0>;\$<LINK_ONLY:pangocairo-1.0>;\$<LINK_ONLY:atk-1.0>;\$<LINK_ONLY:cairo>;\$<LINK_ONLY:gdk_pixbuf-2.0>;\$<LINK_ONLY:gio-2.0>;\$<LINK_ONLY:pangoft2-1.0>;\$<LINK_ONLY:pango-1.0>;\$<LINK_ONLY:gobject-2.0>;\$<LINK_ONLY:glib-2.0>;\$<LINK_ONLY:fontconfig>;\$<LINK_ONLY:freetype>;\$<LINK_ONLY:gthread-2.0>;\$<LINK_ONLY:glib-2.0>"
 )
 
 if(CMAKE_VERSION VERSION_LESS 2.8.12)

@@ -4,7 +4,6 @@ project(zed-context-driver)
 if(COMMAND cmake_policy)
   cmake_policy(SET CMP0003 OLD)
   cmake_policy(SET CMP0015 OLD)
-  cmake_policy(SET CMP0063 NEW)
 endif(COMMAND cmake_policy)
 
 set(EXECUTABLE_OUTPUT_PATH ".")
@@ -23,34 +22,24 @@ link_directories(${ZED_LIBRARY_DIR})
 link_directories(${CUDA_LIBRARY_DIRS})
 link_directories(${Boost_LIBRARY_DIR})
 
-add_definitions(-std=c++11 -O3) # -DHIDE_SYMBOLS -fvisibility=hidden -fvisibility-inlines-hidden )
+add_library(zedwrapper SHARED ${CMAKE_CURRENT_SOURCE_DIR}/include/ZEDWrapperPublic.cpp)
+
+set(LIBRARIES ${ZED_LIBRARIES}
+              ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
+              ${OpenCV_LIBRARIES} -lrt -lpthread)
+
+add_definitions(-std=c++11 -O3) # -DUSE_MANAGED_SHARED_MEMORY)
 
 add_executable(zedtester "zedtester.cpp")
 add_executable(zeddriver "zeddriver.cpp")
 add_executable(buffertest "buffertest.cpp")
 add_executable(imagetest "imagetest.cpp")
 
-add_library(zedwrapper SHARED ${CMAKE_CURRENT_SOURCE_DIR}/include/ZEDWrapperPublic.cpp)
-
-target_link_libraries(zedwrapper
-                         ${ZED_LIBRARIES}
-                         ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
-                         ${OpenCV_LIBRARIES} -lrt -lpthread)
-
-target_link_libraries(zedtester
-                         ${ZED_LIBRARIES}
-                         ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
-                         ${OpenCV_LIBRARIES} -lrt -lpthread)
-
-target_link_libraries(zeddriver
-                         zedwrapper ${ZED_LIBRARIES}
-                         ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
-                         ${OpenCV_LIBRARIES} -lrt -lpthread)
-
+target_link_libraries(zedwrapper ${LIBRARIES})
+target_link_libraries(zedtester ${LIBRARIES})
+target_link_libraries(zeddriver ${LIBRARIES})
 target_link_libraries(buffertest -lrt -lpthread)
-
-target_link_libraries(imagetest
-                         ${OpenCV_LIBRARIES} -lrt -lpthread)
+target_link_libraries(imagetest ${OpenCV_LIBRARIES} -lrt -lpthread)
 
 set(directory delivery)
 add_custom_target(delivery ALL

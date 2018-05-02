@@ -1,5 +1,5 @@
 //compiler flag for shared memory or shared file
-#define USE_MANAGED_SHARED_MEMORY
+//#define USE_MANAGED_SHARED_MEMORY
 
 // Standard includes
 #include <iostream>
@@ -59,8 +59,11 @@ int main(int argc, char **argv) {
       char key = ' ';
       while(key != 'q' && stop == false)
       {
-        vector<ImageHeaderMsg> outbuf;  //a STL vector to read out all ImageheaderMsg blocks currently stored to the buffer
-        auto p=buf.read(outbuf);        //read the messages from the buffer and move the iterator to the begining (always at outbuf[0] in this case)
+        vector<ImageHeaderMsg> outbuf;               //a STL vector to read out all ImageheaderMsg blocks currently stored to the buffer
+        auto p=buf.read(outbuf,1);                   //read the messages from the buffer and move the iterator to the begining (always at outbuf[0] in this case)
+        ImageHeaderMsg* hdr=(ImageHeaderMsg*)&*p;    //create a pointer to the header of the image (first image block)
+        p=buf.read(outbuf, (20*(hdr->block_nmb+1)-1)); 
+        p=p-1;
         while(p!=outbuf.end())          //display all the images that are currently stored to the local buffer (outbuf)
         {
           ImageHeaderMsg *c=(ImageHeaderMsg*)&*p;           //create a pointer to the header of the image (first image block)

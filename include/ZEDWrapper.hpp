@@ -323,9 +323,9 @@ class ZEDWrapper {
 
       // Publish odometry message
       int buf_size = pub_odom.write(odom_data);
-      if(buf_size>max_odom*sizeof(odom_data))
+      if(buf_size>max_odom)
       {
-        pub_odom.resize(max_odom*sizeof(odom_data));
+        pub_odom.resize(max_odom);
       }
     }
 
@@ -352,9 +352,9 @@ class ZEDWrapper {
       imu_data.linear_acceleration[2] = -imu_in.linear_acceleration[1];
 
       int buf_size = pub_imu.write(imu_data);
-      if(buf_size>max_imu*sizeof(imu_data))
+      if(buf_size>max_imu)
       {
-        pub_imu.resize(max_imu*sizeof(imu_data));
+        pub_imu.resize(max_imu);
       }
   }
 

@@ -9,7 +9,7 @@
  *
  **********************************************************************************/
 
-#define USE_MANAGED_SHARED_MEMORY
+//#define USE_MANAGED_SHARED_MEMORY
 
 
 #include "ZEDWrapperPublic.hpp"

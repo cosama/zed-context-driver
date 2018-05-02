@@ -8,7 +8,7 @@
  * Date:   March 2018
  *
  **********************************************************************************/
-#define USE_MANAGED_SHARED_MEMORY
+//#define USE_MANAGED_SHARED_MEMORY
 
 #include <sl/Camera.hpp>
 #include "ZEDWrapper.hpp"

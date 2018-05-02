@@ -97,8 +97,17 @@ template <class T> class SharedBuffer
       if(!bname.empty())
       {
         mem_name.assign(bname);
-        mut_name.assign(bname+"Mut");
-        sta_name.assign(bname+"Sta");
+        std::string msname=bname;
+        #ifdef _WIN32
+        size_t i = bname.rfind('\\', bname.length());
+        #else
+        size_t i = bname.rfind('/', bname.length());
+        #endif
+        if (i != std::string::npos) {
+            msname.assign(bname.substr(i+1, bname.length() - i));
+        }
+        mut_name.assign(msname+"Mut");
+        sta_name.assign(msname+"Sta");
       }
       else if(mem_name.empty()) return 0; //no valid name
       if(bsize==0)
@@ -311,21 +320,20 @@ template <class T> class SharedBuffer
       boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
       check_mem(); //reconnect or recreate
       int bsize=buffer->size();
-      if(max_len && bsize>max_len) bsize=max_len; 
-
+      if(max_len<=0 || bsize<max_len) max_len=bsize; 
       auto start = buffer->begin();
       if(stat && id>=0 && id<stat->pop_size)
       {
         if(stat->pop_counter[id]>=bsize) return vec.end();
+        if(stat->pop_counter[id]+max_len>=bsize) max_len=bsize-stat->pop_counter[id];
         if(stat->pop_counter[id]>0)
         {
           start+=stat->pop_counter[id];
-          bsize-=stat->pop_counter[id];
         }
-        stat->pop_counter[id] += bsize;
+        stat->pop_counter[id] += max_len;
       }
 
-      auto end = start + bsize; //less than end...
+      auto end = start + max_len; //less than end...
       int oldpos = vec.size();
       vec.insert(vec.end(), start , end);
       return vec.begin()+oldpos;

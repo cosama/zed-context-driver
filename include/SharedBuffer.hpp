@@ -227,6 +227,8 @@ template <class T> class SharedBuffer
 
     ~SharedBuffer<T>()
     {
+      if(locked) nm->unlock();
+      locked = false;
       if(stat && id>=0 && id<=stat->pop_size) stat->pop_counter[id]=-1; //unregister
       if(owner == true) force_remove();
       if(nm!=NULL)     delete nm;

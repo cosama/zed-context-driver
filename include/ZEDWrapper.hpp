@@ -1017,8 +1017,8 @@ class ZEDWrapper {
       conf.componentPositionAndOrientation = pose;
       conf.videoConfiguration.componentPositionAndOrientation = pose;
       conf.videoConfiguration.componentId = id;
-      conf.videoConfiguration.intrinsics.K.clear();
-      conf.videoConfiguration.intrinsics.P.clear();
+      for(int i=0; i<3; i++) conf.videoConfiguration.intrinsics.K[i];
+      for(int i=0; i<2; i++) conf.videoConfiguration.intrinsics.P[i];
       if(id>=3)
       {
         conf.videoConfiguration.fileName = "";
@@ -1048,11 +1048,11 @@ class ZEDWrapper {
         conf.videoConfiguration.intrinsics.cx = cx;
         conf.videoConfiguration.intrinsics.fy = fy;
         conf.videoConfiguration.intrinsics.cy = cy;
-        conf.videoConfiguration.intrinsics.K.push_back(info.D[0]);
-        conf.videoConfiguration.intrinsics.K.push_back(info.D[1]);
-        conf.videoConfiguration.intrinsics.K.push_back(info.D[4]);
-        conf.videoConfiguration.intrinsics.P.push_back(info.D[2]);
-        conf.videoConfiguration.intrinsics.P.push_back(info.D[3]);
+        conf.videoConfiguration.intrinsics.K[0]=(info.D[0]);
+        conf.videoConfiguration.intrinsics.K[1]=(info.D[1]);
+        conf.videoConfiguration.intrinsics.K[2]=(info.D[4]);
+        conf.videoConfiguration.intrinsics.P[0]=(info.D[2]);
+        conf.videoConfiguration.intrinsics.P[1]=(info.D[3]);
         conf.videoConfiguration.verticalFOV   = 45/atan(1)*(atan(cy/fy) + 
                              atan((conf.videoConfiguration.verticalResolution-cy)/fy)); 
         conf.videoConfiguration.horizontalFOV = 45/atan(1)*(atan(cx/fx) + 

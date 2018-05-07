@@ -27,8 +27,8 @@ struct ZEDGridPositionAndOrientation {
 struct ZEDCameraIntrinsics {
   double cx, cy; //horizontal, vertical optical center
   double fx, fy; //x/y vocal length
-  std::vector <double> K; //radial distortion coefficients
-  std::vector <double> P; //tangential distortion coefficients
+  double K[3];   //radial distortion coefficients
+  double P[2];   //tangential distortion coefficients
 };
 
 //Thrift-like ComponentDefinition

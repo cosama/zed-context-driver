@@ -56,10 +56,10 @@ void PrintThrift(const ZEDContextStreamDefinition &def)
   std::cout << "         cx cy: " << def.configuration.videoConfiguration.intrinsics.cx << " " << def.configuration.videoConfiguration.intrinsics.cy << std::endl;
   std::cout << "         fx fy: " << def.configuration.videoConfiguration.intrinsics.fx << " " << def.configuration.videoConfiguration.intrinsics.fy << std::endl;
   std::cout << "         K1 K2 ...: ";
-  for (auto i = def.configuration.videoConfiguration.intrinsics.K.begin(); i != def.configuration.videoConfiguration.intrinsics.K.end(); ++i) std::cout << *i << " ";
+  for (int i = 0; i<3; ++i) std::cout << def.configuration.videoConfiguration.intrinsics.K[i] << " ";
   std::cout << std::endl;
   std::cout << "         P1 P2 ...: ";
-  for (auto i = def.configuration.videoConfiguration.intrinsics.P.begin(); i != def.configuration.videoConfiguration.intrinsics.P.end(); ++i) std::cout << *i << " ";
+  for (int i = 0; i<2; ++i) std::cout << def.configuration.videoConfiguration.intrinsics.P[i] << " ";
   std::cout << std::endl;
   std::cout << "      Timestamp: " << def.configuration.videoConfiguration.timeStamp << std::endl;
   std::cout << "   Timestamp: " << def.configuration.timeStamp << std::endl;
@@ -116,17 +116,18 @@ int main(int argc, char** argv)
     while ( iss >> b) {
      a.push_back(b);
     }
-    if     (a[0].compare("imu-rate")==0)   zed.setImuRate(std::stof(a[1]));                                      //Change the imu rate to a given value (arg2 == rate)
-    else if(a[0].compare("mesh-rate")==0)  zed.setMeshRate(std::stof(a[1]));                                     //Change the mesh rate to a given value (arg2 == rate)
-    else if(a[0].compare("frame-rate")==0) zed.setFrameRate(std::stof(a[1]));                                    //Change the frame rate to a given value (arg2 == rate)
-    else if(a[0].compare("length")==0)     zed.setBufferLength(std::stoi(a[1]));                                 //Change the buffer lenght to a given value (arg2 == length)
-    else if(a[0].compare("autocalib")==0)  zed.doAutoCalibration();                                              //Force an auto calibration (not sure if this does something)
-    else if(a[0].compare("save-map")==0)                                                                         //Save the mesh to a file (arg2 == filename)
+    if     (a.size()==1 && a[0].compare("q")==0)          break;                                                  //Exit
+    else if(a.size()==2 && a[0].compare("imu-rate")==0)   zed.setImuRate(std::stof(a[1]));                        //Change the imu rate to a given value (arg2 == rate)
+    else if(a.size()==2 && a[0].compare("mesh-rate")==0)  zed.setMeshRate(std::stof(a[1]));                       //Change the mesh rate to a given value (arg2 == rate)
+    else if(a.size()==2 && a[0].compare("frame-rate")==0) zed.setFrameRate(std::stof(a[1]));                      //Change the frame rate to a given value (arg2 == rate)
+    else if(a.size()==2 && a[0].compare("length")==0)     zed.setBufferLength(std::stoi(a[1]));                   //Change the buffer lenght to a given value (arg2 == length)
+    else if(a.size()==2 && a[0].compare("autocalib")==0)  zed.doAutoCalibration();                                //Force an auto calibration (not sure if this does something)
+    else if(a.size()==2 && a[0].compare("save-map")==0)                                                           //Save the mesh to a file (arg2 == filename)
     {
       if(!zed.getMappingFlag()){ std::cout << "Mapping was not initialized, please restart server first" << std::endl; }
-      zed.saveMesh(b);
+      zed.saveMesh(a[1]);
     }
-    else if(a[0].compare("info")==0)
+    else if(a.size()==1 && a[0].compare("info")==0)
     {
       std::vector <ZEDContextStreamDefinition> stream = zed.getZEDStreamDefinitions();
       for(auto i = stream.begin(); i != stream.end(); i++)
@@ -135,7 +136,7 @@ int main(int argc, char** argv)
         std::cout << std::endl;
       }
     }
-    else if(a[0].compare("q")==0)          break;                                                                //Exit
+
     else std::cout << "Do not understand input, try again" << std::endl;
     std::cout << '\n' << ">> ";
   }

@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <thread>
+#include <iostream>
 
 //A function that can be used to read a image (return) from the 'topic' buffer, ms_sleep indicates how many milliseconds it 
 //should sleep if the buffer is empty before trying to grab a gain and timeout is the time in milliseconds after that it 
@@ -114,7 +115,7 @@ template <class T> int write_fixed_to_buffer(SharedBuffer<T> &topic, T &data, in
 {
   topic.lock();
   int buf_size = topic.write(data);
-  while(buf_size>max_data)
+  while(max_data>0 && buf_size>max_data)
   {
     topic.resize(max_data);
     buf_size = topic.size();

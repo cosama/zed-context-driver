@@ -83,19 +83,19 @@ int main(int argc, char** argv)
     while ( iss >> b) {
      a.push_back(b);
     }
-    if     (a[0].compare("imu-rate")==0)   zed.setImuRate(std::stof(a[1]));                                      //Change the imu rate to a given value (arg2 == rate)
-    else if(a[0].compare("mesh-rate")==0)  zed.setMeshRate(std::stof(a[1]));                                     //Change the mesh rate to a given value (arg2 == rate)
-    else if(a[0].compare("frame-rate")==0) zed.setFrameRate(std::stof(a[1]));                                    //Change the frame rate to a given value (arg2 == rate)
-    else if(a[0].compare("length")==0)     zed.setBufferLength(std::stoi(a[1]));                                 //Change the buffer lenght to a given value (arg2 == length)
-    else if(a[0].compare("info-left")==0)  PrintCameraInfo(zed.getLeftCamaraInfo());                             //Display the left camera info
-    else if(a[0].compare("info-right")==0) PrintCameraInfo(zed.getRightCamaraInfo());                            //Display the right camera info
-    else if(a[0].compare("autocalib")==0)  zed.doAutoCalibration();                                              //Force an auto calibration (not sure if this does something)
-    else if(a[0].compare("save-map")==0)                                                                         //Save the mesh to a file (arg2 == filename)
+    if     (a.size()==2 && a[0].compare("imu-rate")==0)   zed.setImuRate(std::stof(a[1]));                        //Change the imu rate to a given value (arg2 == rate)
+    else if(a.size()==2 && a[0].compare("mesh-rate")==0)  zed.setMeshRate(std::stof(a[1]));                       //Change the mesh rate to a given value (arg2 == rate)
+    else if(a.size()==2 && a[0].compare("frame-rate")==0) zed.setFrameRate(std::stof(a[1]));                      //Change the frame rate to a given value (arg2 == rate)
+    else if(a.size()==2 && a[0].compare("length")==0)     zed.setBufferLength(std::stoi(a[1]));                   //Change the buffer lenght to a given value (arg2 == length)
+    else if(a.size()==2 && a[0].compare("info-left")==0)  PrintCameraInfo(zed.getLeftCamaraInfo());               //Display the left camera info
+    else if(a.size()==2 && a[0].compare("info-right")==0) PrintCameraInfo(zed.getRightCamaraInfo());              //Display the right camera info
+    else if(a.size()==2 && a[0].compare("autocalib")==0)  zed.doAutoCalibration();                                //Force an auto calibration (not sure if this does something)
+    else if(a.size()==2 && a[0].compare("save-map")==0)                                                           //Save the mesh to a file (arg2 == filename)
     {
       if(!zed.getMappingFlag()){ std::cout << "Mapping was not initialized, please restart server first" << std::endl; }
-      zed.saveMesh(b);
+      zed.saveMesh(a[1]);
     }
-    else if(a[0].compare("q")==0)          break;                                                                //Exit
+    else if(a.size()==1 && a[0].compare("q")==0)          break;                                                                //Exit
     else std::cout << "Do not understand input, try again" << std::endl;
     std::cout << '\n' << ">> ";
   }

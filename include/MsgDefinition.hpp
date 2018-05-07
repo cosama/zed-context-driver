@@ -1,31 +1,30 @@
 /***********************************************************************************
  * Header file that defines the different message types passed by shared memory
  * 
- * Author: Marco Salathe <msalathe@lbl.gov>
- * Date:   March 2018
+ * Author:  Marco Salathe <msalathe@lbl.gov>
+ * Date:    March 2018
+ * License: If you like to use this code, please contact the author.
  *
  **********************************************************************************/
 
 #ifndef MSGDEFINITION_HPP
 #define MSGDEFINITION_HPP
 
-//largest common factor of 1280x720 and 672x376
-//times 4channels (8U-type) per pixel
+//largest common factor of 1280x720 and 672x376 times 4channels (8U-type) per pixel
 #define IMAGE_SEND_BITS 768*4
 
-//time stamp format similar to C's timeval
+//time stamp format similar to C's timeval, seconds and microseconds
 struct Timestamp{
   long long sec, usec;
 };
 
-//image header format: the length of the header 
-//defines the block size of an image, the actual
-//image data needs to be dividable by this length
-//the padding is added to inflate the header to
-//the correct size, this adds ~5MB for 900msgs,
-//the header size is the image size in bytes, the
-//type the opencv mat type and block_size and nmb
-//define the size and nmb of blocks in a given image
+//image header format: the length of the header defines the block size of an image, 
+//the actual image data needs to be dividable by this length the padding is added 
+//to inflate the header to the correct size, this adds ~5MB for 900msgs, the header 
+//size is the image size in bytes, the type the opencv mat type and block_size and nmb
+//define the size and nmb of blocks in a given image. Optimally the data pointer
+//defines the memory block (continous) where the image is stored. Can be converted in 
+//a cv::Mat(header->rows, header->cols, header->type, header->data);
 struct ImageHeaderMsg {
   Timestamp time;
   int size;
@@ -34,7 +33,8 @@ struct ImageHeaderMsg {
   int type;
   int block_size;
   int block_nmb;
-  char pad[IMAGE_SEND_BITS-24-sizeof(Timestamp)];
+  void *data;
+  char pad[IMAGE_SEND_BITS-6*sizeof(int)-sizeof(Timestamp)-sizeof(void*)];
 };
 
 //pose message format

@@ -12,20 +12,24 @@
 #ifndef ZEDWRAPPER_HPP
 #define ZEDWRAPPER_HPP
 
+//Shared memory buffer wrapper
+#include "SharedBuffer.hpp"
+
+//Message definitions
+#include "MsgDefinition.hpp"
+#include "ZEDMsgDefinition.hpp"
+
+//Utilities
+#include "SBUtilities.hpp"
+
 //OpenCV is to define the matrix types and to save images to disk
 #include <opencv2/opencv.hpp>
 
 //ZED SDK
 #include <sl/Camera.hpp>
 
-//Shared memory buffer wrapper
-#include <SharedBuffer.hpp>
-
-//Message definitions
-#include <MsgDefinition.hpp>
-#include <ZEDMsgDefinition.hpp>
-
 //STL
+#include <deque>
 #include <vector>
 #include <iostream>
 #include <sstream>
@@ -35,7 +39,8 @@
 typedef std::chrono::system_clock MyClock;
 
 //Some general purpose functions from the zed-ros-wrapper
-int checkCameraReady(unsigned int serial_number) {
+int checkCameraReady(unsigned int serial_number)
+{
     int id = -1;
     auto f = sl::Camera::getDeviceList();
     for (auto &it : f)
@@ -44,22 +49,26 @@ int checkCameraReady(unsigned int serial_number) {
     return id;
 };
 
-sl::DeviceProperties getZEDFromSN(unsigned int serial_number) {
+sl::DeviceProperties getZEDFromSN(unsigned int serial_number)
+{
     sl::DeviceProperties prop;
     auto f = sl::Camera::getDeviceList();
-    for (auto &it : f) {
+    for (auto &it : f)
+    {
         if (it.serial_number == serial_number && it.camera_state == sl::CAMERA_STATE::CAMERA_STATE_AVAILABLE)
             prop = it;
     }
     return prop;
 };
 
-int saveZEDMattoImage(std::string prefix, sl::Mat mat, Timestamp time, std::string endfix=std::string("jpg")) {
+int saveZEDMattoImage(std::string prefix, sl::Mat mat, Timestamp time, std::string endfix=std::string("jpg"))
+{
   if (mat.getMemoryType() == sl::MEM_GPU)
       mat.updateCPUfromGPU();
 
   int cvType;
-  switch (mat.getDataType()) {
+  switch (mat.getDataType())
+  {
     case sl::MAT_TYPE_32F_C1:
       cvType = CV_32FC1;
       break;
@@ -92,13 +101,17 @@ int saveZEDMattoImage(std::string prefix, sl::Mat mat, Timestamp time, std::stri
   return 1;
 }
 
-cv::Mat convertRodrigues(sl::float3 r) {
+cv::Mat convertRodrigues(sl::float3 r)
+{
   double theta = sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
   cv::Mat R = cv::Mat::eye(3, 3, CV_32F);
 
-  if (theta < DBL_EPSILON) {
+  if (theta < DBL_EPSILON)
+  {
     return R;
-  } else {
+  }
+  else
+  {
     double c = cos(theta);
     double s = sin(theta);
     double c1 = 1. - c;
@@ -136,7 +149,8 @@ cv::Mat convertRodrigues(sl::float3 r) {
   return R;
 }
 
-CameraInfo fillCamInfo(sl::Camera& zed, sl::VIEW view) {
+CameraInfo fillCamInfo(sl::Camera& zed, sl::VIEW view)
+{
 
   CameraInfo cam_info = {0}; //set everything to zero
 
@@ -286,6 +300,7 @@ class ZEDWrapper {
     double frame_rate;
     double imu_rate;
     double mesh_rate;
+    double camera_rate;
     int max_buffer_length;
 
     bool bimg_on;
@@ -303,7 +318,8 @@ class ZEDWrapper {
     std::string svo_filename;
 
     //publish odometry data to a shared memory buffer
-    void publishOdom(sl::Pose odom_in, SharedBuffer<PoseMsg> &pub_odom, Timestamp t, int max_odom) {
+    void publishOdom(sl::Pose odom_in, SharedBuffer<PoseMsg> &pub_odom, Timestamp t, int max_odom)
+    {
       static PoseMsg odom_data;
 
       odom_data.time.sec  = t.sec;
@@ -322,16 +338,13 @@ class ZEDWrapper {
       odom_data.confidence = odom_in.pose_confidence;
 
       // Publish odometry message
-      int buf_size = pub_odom.write(odom_data);
-      if(buf_size>max_odom)
-      {
-        pub_odom.resize(max_odom);
-      }
+      write_fixed_to_buffer(pub_odom, odom_data, max_odom);
     }
 
 
     // publish imu data to a shared memory buffer
-    void publishIMU(sl::IMUData imu_in, SharedBuffer<ImuMsg> &pub_imu, Timestamp t, int max_imu) {
+    void publishIMU(sl::IMUData imu_in, SharedBuffer<ImuMsg> &pub_imu, Timestamp t, int max_imu)
+    {
       static ImuMsg imu_data;
 
       imu_data.time.sec  = t.sec;
@@ -351,18 +364,17 @@ class ZEDWrapper {
       imu_data.linear_acceleration[1] = -imu_in.linear_acceleration[0];
       imu_data.linear_acceleration[2] = -imu_in.linear_acceleration[1];
 
-      int buf_size = pub_imu.write(imu_data);
-      if(buf_size>max_imu)
-      {
-        pub_imu.resize(max_imu);
-      }
-  }
+      // Publish imu message
+      write_fixed_to_buffer(pub_imu, imu_data, max_imu);
+    }
 
 
     // publish an image (stored as an ZED SDK Matrix) to a shared memory buffer
     void publishImage(sl::Mat img_in, SharedBuffer<ImageHeaderMsg> &pub_img, Timestamp t, int max_img)
     {
       static int msgsize=sizeof(ImageHeaderMsg);
+      static int cur_img=0;
+
       if(img_in.getMemoryType() == sl::MEM_GPU) img_in.updateCPUfromGPU();
 
       ImageHeaderMsg hdr;
@@ -375,7 +387,8 @@ class ZEDWrapper {
       hdr.time.sec  = t.sec;
       hdr.time.usec = t.usec;
 
-      switch (img_in.getDataType()) {
+      switch (img_in.getDataType())
+      {
         case sl::MAT_TYPE_32F_C1:
           hdr.type = CV_32FC1;
           break;
@@ -402,25 +415,26 @@ class ZEDWrapper {
           break;
       }
 
-      ImageHeaderMsg* img_ptr= (ImageHeaderMsg*)img_in.getPtr<sl::uchar1>(sl::MEM_CPU);
-      int buf_size = pub_img.write({ &hdr, &hdr+1, img_ptr, img_ptr+hdr.block_nmb });
-      if(buf_size>max_img*(hdr.block_nmb+1))
-      {
-        pub_img.resize(max_img*(hdr.block_nmb+1));
-      }
-
+      hdr.data = (void*)img_in.getPtr<sl::uchar1>(sl::MEM_CPU);
+      write_image_to_buffer(pub_img, hdr, max_img);
     }
 
-    void device_poll() {
-
+    void device_poll()
+    {
       MyClock::time_point old_t = MyClock::now();
       MyClock::time_point tmesh = MyClock::now();
       MyClock::time_point tbimg = MyClock::now();
-      LoopTime loop_time(1e6/(frame_rate>imu_rate?frame_rate:imu_rate)); //micro seconds
+      LoopTime loop_time(1e6/(camera_rate>imu_rate?camera_rate:imu_rate)); //micro seconds
 
+      MyClock::time_point svo_time=MyClock::now();
+  
       sl::ERROR_CODE grab_status;
       bool tracking_activated = false;
       bool mapping_activated = false;
+      bool from_svo = (zed.getSVONumberOfFrames()>0);
+
+      std::chrono::microseconds camera_time((int)(1e6 / camera_rate)); //in micro seconds
+      MyClock::time_point camera_expected = old_t+camera_time;
 
       std::chrono::microseconds frame_time((int)(1e6 / frame_rate)); //in micro seconds
       MyClock::time_point frame_expected = old_t+frame_time;
@@ -443,17 +457,27 @@ class ZEDWrapper {
       spatial_mapping_params.max_memory_usage = mapping_memory;
       spatial_mapping_params.save_texture = false;
       spatial_mapping_params.use_chunk_only = true;
-
+      
       sl::Mat leftZEDMat, rightZEDMat, depthZEDMat;
       // Main loop
-      while (run_wrapper) {
+      while (run_wrapper)
+      {
         // Check for subscribers
         bool runLoop = (limg_on + rimg_on + odom_on + imu_on + map_on + bimg_on);
 
         // Run the loop only if there is some subscribers
-        if (runLoop) {
-
+        if (runLoop)
+        {
           auto time=MyClock::now();
+          if(from_svo)
+          {
+            sl::timeStamp ts_old=zed.getTimestamp(sl::TIME_REFERENCE::TIME_REFERENCE_IMAGE);
+            grab_status = zed.grab(runParams); // Ask to not compute the depth
+            sl::timeStamp ts_new=zed.getTimestamp(sl::TIME_REFERENCE::TIME_REFERENCE_IMAGE);
+            svo_time = svo_time + std::chrono::nanoseconds(ts_new - ts_old); //define when we have to get the next frame
+            time = svo_time;
+            loop_time.set(0); //read it in continously
+          }
 
           Timestamp tstamp;
           std::chrono::seconds const sec = std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch());
@@ -461,32 +485,60 @@ class ZEDWrapper {
           tstamp.usec = std::chrono::duration_cast<std::chrono::microseconds>(time.time_since_epoch() - sec).count();
 
           //update rates, so that they can be dynamically set
-          loop_time.set(frame_rate>imu_rate?frame_rate:imu_rate);
+          loop_time.set(1e6/(camera_rate>imu_rate?camera_rate:imu_rate));
 
           // Publish the IMU if someone has subscribed to
-          if (imu_on) {
+          if (imu_on)
+          {
             zed.getIMUData(imud, sl::TIME_REFERENCE_CURRENT);
             publishIMU(imud, pub_imu, tstamp, max_buffer_length*imu_rate/frame_rate);
           }
 
-          if(frame_expected>time){ 
+          //synchronize time stamps of svo with current time
+          //if(zed.getSVONumberOfFrames()>0)
+          //{
+            //if(time>svo_time)
+            //{
+            //  sl::timeStamp ts_old=zed.getTimestamp(sl::TIME_REFERENCE::TIME_REFERENCE_IMAGE);
+            //  grab_status = zed.grab(runParams); // Ask to not compute the depth
+            //  sl::timeStamp ts_new=zed.getTimestamp(sl::TIME_REFERENCE::TIME_REFERENCE_IMAGE);
+              //long long run_time = std::chrono::duration_cast<std::chrono::nanoseconds>(time - svo_time).count();
+              //long long dlt_time = ts_new-ts_old;
+              //if(dlt_time<run_time)
+              //{
+              //  int old_pos = zed.getSVOPosition();
+              //  int skips = run_time/dlt_time+1;
+              //  std::cout << old_pos << " " << skips << " " << run_time << " " << dlt_time << std::endl;
+              //  if(old_pos+skips>zed.getSVONumberOfFrames()) skips=zed.getSVONumberOfFrames()-old_pos;
+              //  zed.setSVOPosition(old_pos+skips);
+              //  ts_new+=skips*dlt_time;
+              //}
+              //time = time + std::chrono::nanoseconds(ts_new - ts_old); //define when we have to get the next frame
+            //}
+          //}
+
+          if(camera_expected>time)
+          {
             loop_time.sleep(); continue; //goon nothing to be done at this point
           }
-          frame_time = std::chrono::microseconds((int)(1e6 / frame_rate));
-          frame_expected = time + frame_time;
+          //camera_time = std::chrono::microseconds((int)(1e6 / camera_rate)); //camera rate can not be changed
+          camera_expected = time + camera_time;
 
-          if ((depth_stabilization || odom_on) && !tracking_activated) { //Start the tracking
+          if ((depth_stabilization || odom_on) && !tracking_activated)
+          { //Start the tracking
             zed.enableTracking(trackParams);
             tracking_activated = true;
-          } else if (!depth_stabilization && !odom_on && tracking_activated) { //Stop the tracking
+          }
+          else if (!depth_stabilization && !odom_on && tracking_activated)
+          { //Stop the tracking
             zed.disableTracking();
             tracking_activated = false;
           }
           computeDepth = map_on + odom_on + depth_on; // Detect if one of the subscriber need to have the depth information
 
-          if (computeDepth) {
+          if (computeDepth)
             runParams.enable_depth = true; // Ask to compute the depth
-          } else
+          else
             runParams.enable_depth = false;
 
           if(map_on && !mapping_activated)
@@ -496,7 +548,9 @@ class ZEDWrapper {
               sl::SPATIAL_MAPPING_STATE state=zed.getSpatialMappingState();
             if(state!=sl::SPATIAL_MAPPING_STATE::SPATIAL_MAPPING_STATE_NOT_ENABLED)
               mapping_activated = true;
-          } else if (!map_on && mapping_activated) {
+          }
+          else if (!map_on && mapping_activated)
+          {
             zed.disableSpatialMapping();
             mapping_activated = false;
           }
@@ -505,26 +559,33 @@ class ZEDWrapper {
 
           //std::cout << "Run wrapper " << zed.getCurrentFPS() << std::endl;
           //cout << toString(grab_status) << endl;
-          if (grab_status != sl::ERROR_CODE::SUCCESS) { // Detect if a error occurred (for example: the zed have been disconnected) and re-initialize the ZED
-            if (grab_status == sl::ERROR_CODE_NOT_A_NEW_FRAME) {
-              if(zed.getSVONumberOfFrames()>=0 && zed.getSVONumberOfFrames() == zed.getSVOPosition())
+          if (grab_status != sl::ERROR_CODE::SUCCESS)
+          { // Detect if a error occurred (for example: the zed have been disconnected) and re-initialize the ZED
+            if (grab_status == sl::ERROR_CODE_NOT_A_NEW_FRAME)
+            {
+              if(from_svo && zed.getSVONumberOfFrames() == zed.getSVOPosition())
               {
+                std::cout << "End of file reached, stop thread (do not terminate topics)" << std::endl;
                 run_wrapper = false;
                 break;
               }
               std::cout << "Wait for a new image to proceed" << std::endl;
-            } else std::cout << toString(grab_status) << std::endl;
+            } 
+            else std::cout << toString(grab_status) << std::endl;
 
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
 
-            if ((time - old_t) > std::chrono::seconds(5)) {
+            if ((time - old_t) > std::chrono::seconds(5))
+            {
               zed.close();
 
               std::cout << "Re-opening the ZED" << std::endl;
               sl::ERROR_CODE err = sl::ERROR_CODE_CAMERA_NOT_DETECTED;
-              while (err != sl::SUCCESS) {
+              while (err != sl::SUCCESS)
+              {
                 int id = checkCameraReady(serial_number); 
-                if (id > 0) {
+                if (id > 0)
+                {
                   param.camera_linux_id = id;
                   err = zed.open(param); // Try to initialize the ZED
                   std::cout << toString(err) << std::endl;
@@ -532,31 +593,44 @@ class ZEDWrapper {
                   std::this_thread::sleep_for(std::chrono::milliseconds(2000));
               }
               tracking_activated = false;
-              if (odom_on) { //Start the tracking
+              if (odom_on)
+              { //Start the tracking
                 zed.enableTracking(trackParams);
                 tracking_activated = true;
               }
             }
             continue;
           }
-          old_t = MyClock::now();
+          old_t = time; //MyClock::now();
+
+          if(frame_expected>time)
+          {
+            continue; //goon nothing to be done at this point
+          }
+          frame_time = std::chrono::microseconds((int)(1e6 / frame_rate)); //camera rate can not be changed
+          frame_expected = time + frame_time;
+
 
           // Publish the image if someone has subscribed to
-          if (limg_on) {
+          if (limg_on)
+          {
             zed.retrieveImage(leftZEDMat, lv);
             publishImage(leftZEDMat,  pub_left,  tstamp, max_buffer_length);
           }
-          if (rimg_on) {
+          if (rimg_on)
+          {
             zed.retrieveImage(rightZEDMat, rv);
             publishImage(rightZEDMat, pub_right, tstamp, max_buffer_length);
           }
-          if (depth_on) {
+          if (depth_on)
+          {
             zed.retrieveMeasure(depthZEDMat, sl::MEASURE_DEPTH);
             publishImage(depthZEDMat, pub_depth, tstamp, max_buffer_length);
           }
 
           // Publish the odometry if someone has subscribed to
-          if (odom_on) {
+          if (odom_on)
+          {
             sl::TRACKING_STATE tracking_error = zed.getPosition(pose);
             if(tracking_error!=sl::TRACKING_STATE_OK) std::cout << sl::toString(tracking_error) << std::endl;
             publishOdom(pose, pub_odom, tstamp, max_buffer_length);
@@ -569,10 +643,11 @@ class ZEDWrapper {
             {
                 //std::cout << "Request mesh" << std::endl;
                 zed.requestMeshAsync();
-                tmesh = MyClock::now();
+                tmesh = time; // MyClock::now();
             }
 
-            if (zed.getMeshRequestStatusAsync() == sl::SUCCESS) {
+            if (zed.getMeshRequestStatusAsync() == sl::SUCCESS)
+            {
                 zed.retrieveMeshAsync(mesh);
                 mesh_extracted = true;
                 //std::cout << "Mesh retrieved with " << mesh.getNumberOfTriangles() << " Triangles" << std::endl;
@@ -587,16 +662,19 @@ class ZEDWrapper {
             {
               zed.retrieveImage(leftZEDMat, lv);
               saveZEDMattoImage(bimg_prefix, leftZEDMat, tstamp, bimg_endfix);
-              tbimg = MyClock::now();
+              tbimg = time; //MyClock::now();
             }
           }
 
-          loop_time.sleep();
+          //loop_time.sleep();
 
-        } else {
+        } 
+        else
+        {
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); // No subscribers, we just wait
         }
-        if(autocalibration){
+        if(autocalibration)
+        {
           //make sure exposure/gain/brightness/hue are adjusted automatically
           zed.setCameraSettings(sl::CAMERA_SETTINGS_EXPOSURE, 0, true);
           autocalibration = false;
@@ -606,7 +684,8 @@ class ZEDWrapper {
     }
 
   public:
-    int saveMesh(std::string fname){
+    int saveMesh(std::string fname)
+    {
       if(map_on)
       {
         mesh_extracted = false;
@@ -643,6 +722,7 @@ class ZEDWrapper {
       sensing_mode  = sl::SENSING_MODE_STANDARD;
       mesh_rate     = 2;
       frame_rate    = 30;
+      camera_rate   = frame_rate;
       imu_rate      = 200;
       gpu_id        = -1;
       zed_id        = 0;
@@ -666,7 +746,8 @@ class ZEDWrapper {
     }
 
 
-    ~ZEDWrapper() {
+    ~ZEDWrapper()
+    {
       run_wrapper = false;
       device_poll_thread->join();
     }
@@ -683,6 +764,7 @@ class ZEDWrapper {
       std::cout << "   Mapping           : " << (map_on?"on":"off") << std::endl;
       std::cout << "   Buffer length     : " << max_buffer_length << std::endl;
       std::cout << "   Frame rate        : " << frame_rate << std::endl;
+      std::cout << "   Camera rate       : " << camera_rate << std::endl;
       std::cout << "   Imu rate          : " << imu_rate << std::endl;
       std::cout << "   Mesh rate         : " << mesh_rate << std::endl;
       std::cout << "   Confidence        : " << confidence << std::endl;
@@ -693,19 +775,24 @@ class ZEDWrapper {
           param.svo_input_filename = svo_filename.c_str();
       else
       {
-        param.camera_fps = frame_rate;
+        param.camera_fps = camera_rate;
         param.camera_resolution = static_cast<sl::RESOLUTION> (resolution);
         if (serial_number == 0)
           param.camera_linux_id = zed_id;
-        else {
+        else
+        {
           bool waiting_for_camera = true;
-          while (waiting_for_camera) {
+          while (waiting_for_camera)
+          {
             sl::DeviceProperties prop = getZEDFromSN(serial_number);
-            if (prop.id < -1 || prop.camera_state == sl::CAMERA_STATE::CAMERA_STATE_NOT_AVAILABLE) {
+            if (prop.id < -1 || prop.camera_state == sl::CAMERA_STATE::CAMERA_STATE_NOT_AVAILABLE)
+            {
               std::string msg = "ZED SN" + std::to_string(serial_number) + " not detected ! Please connect this ZED";
               std::cout << msg.c_str() << std::endl;
               std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-            } else {
+            }
+            else
+            {
               waiting_for_camera = false;
               param.camera_linux_id = prop.id;
             }
@@ -721,7 +808,8 @@ class ZEDWrapper {
       param.depth_stabilization = depth_stabilization;
 
       sl::ERROR_CODE err = sl::ERROR_CODE_CAMERA_NOT_DETECTED;
-      while (err != sl::SUCCESS) {
+      while (err != sl::SUCCESS)
+      {
         err = zed.open(param);
         std::cout << toString(err) << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
@@ -852,6 +940,12 @@ class ZEDWrapper {
     {
       frame_rate = hertz;
       std::cout << "Frame rate set to " << frame_rate << std::endl;
+    }
+
+    inline void setCameraRate(double hertz)
+    {
+      camera_rate = hertz;
+      std::cout << "Camera rate set to " << camera_rate << std::endl;
     }
 
     inline void setMeshRate(double hertz)

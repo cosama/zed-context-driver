@@ -108,6 +108,11 @@ void ZEDWrapperPublic::setFrameRate(double hertz)
   internal->setFrameRate(hertz);
 };
 
+void ZEDWrapperPublic::setCameraRate(double hertz)
+{
+  internal->setCameraRate(hertz);
+};
+
 void ZEDWrapperPublic::setMeshRate(double hertz)
 {
   internal->setMeshRate(hertz);

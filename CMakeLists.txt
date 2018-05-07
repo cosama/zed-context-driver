@@ -28,7 +28,7 @@ set(LIBRARIES ${ZED_LIBRARIES}
               ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_NPP_LIBRARIES_ZED} 
               ${OpenCV_LIBRARIES} -lrt -lpthread)
 
-add_definitions(-std=c++11 -O3) # -DUSE_MANAGED_SHARED_MEMORY)
+add_definitions(-std=c++11 -O3 -DUSE_MANAGED_SHARED_MEMORY)
 
 add_executable(zedtester "zedtester.cpp")
 add_executable(zeddriver "zeddriver.cpp")

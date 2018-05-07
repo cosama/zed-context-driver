@@ -3,20 +3,24 @@
  * type and fixed sized structure/class can be used, as long as memory is not
  * dynamically allocate (STL containers do not work because of this).
  *
- * Instances can add elements individually by calling the write member function, 
- * however, the whole buffer needs to be read in a chunk and is returned as a 
- * vector (stored to local memory). The memory is locked on read/write thus no 
- * other element will have access at this point. If the owner-process is terminated 
- * without calling the destructor (i.e Ctrl+C) the shared_memory might hang around. 
+ * Instances can add elements individually by calling the write member function. 
+ * The buffer is usually read in chunks calling the read member function and is returned
+ * as a vector (stored to local memory). The memory is locked on read/write thus other
+ * element will have no or restricted access at this point. If the destructor of the
+ * Shared buffers owner instance is called it will clear and remove the buffer. If 
+ * the destructor is not called (i.e Ctrl+C) the shared_memory will stay in memory. 
  * If a process is terminated while it locks the buffer, no other buffer can access
  * the buffer without lifting the lock. In both cases an instance has to connect to 
  * the memory and call force_remove() to lift the lock (if present) and remove the 
- * buffer. If all processes are terminated properly then none of this should ever
+ * buffer (in linux the same result can be achieved by removing the respective file
+ * in /dev/shm). If all processes are terminated properly then none of this should ever
  * be an issue. The buffer keeps track of how many elements have been already read
- * by a given instance and only reads new elements on later reads.
+ * by a given instance and only provides new elements on later reads. It also deals
+ * with memory allocation and expands the memory if required.
  *
- * Author: Marco Salathe <msalathe@lbl.gov>
- * Date:   March 2018
+ * Author:  Marco Salathe <msalathe@lbl.gov>
+ * Date:    March 2018
+ * License: If you like to use this code, please contact the author.
  *
  * WHISHLIST:
  *   * Everything is managed manually through stat, we should just add mutex there
@@ -60,6 +64,7 @@ class BufferStatus{
   bool alive;
   long long mem_size;
   int pop_size;
+  int user_info;
   long long pop_counter[MAX_CLIENTS];
 };
 
@@ -68,6 +73,7 @@ template <class T> class SharedBuffer
   private:
     BufferContainer<T> *buffer;
     bool owner;
+    bool locked;
     int id;
     int alloc_size;
     int csize;
@@ -87,6 +93,7 @@ template <class T> class SharedBuffer
     {
       //bring memory into a acceptable state
       owner      = false;
+      locked     = false;
       buffer     = NULL;
       stat       = NULL;
       if(nm!=NULL) delete nm;
@@ -124,7 +131,7 @@ template <class T> class SharedBuffer
 
       //create status handler
       stamem = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create, sta_name.c_str(), 4096+sizeof(BufferStatus));
-      stat = stamem->find_or_construct<BufferStatus>(sta_name.c_str())(true, alloc_size); //(SharedAllocator<T>(memory->get_segment_manager()));
+      stat = stamem->find_or_construct<BufferStatus>(sta_name.c_str())(true, alloc_size);
       stat->alive=true;
       csize = stat->mem_size;
 
@@ -174,6 +181,7 @@ template <class T> class SharedBuffer
       buffer     = NULL;
       stat       = NULL;
       owner      = false;
+      locked     = false;
     };
 
     void check_alive()
@@ -201,6 +209,7 @@ template <class T> class SharedBuffer
       id         = -1;
       alloc_size = 0;
       owner      = false;
+      locked     = false;
       buffer     = NULL;
       stat       = NULL;
       memory     = NULL;
@@ -233,13 +242,13 @@ template <class T> class SharedBuffer
     {
       check_alive();
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
-      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
       check_mem(); //reconnect or recreate
       while(true)
       {
         try
         {
-          buffer->push_back(obj);//, SharedAllocator<T>(memory->get_segment_manager()));
+          buffer->push_back(obj);
         }
         catch(boost::interprocess::bad_alloc)
         {
@@ -259,7 +268,7 @@ template <class T> class SharedBuffer
     {
       check_alive();
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
-      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
       check_mem(); //reconnect or recreate
       int bsize=buffer->size();
       while(true)
@@ -287,7 +296,7 @@ template <class T> class SharedBuffer
     {
       check_alive();
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
-      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
       check_mem(); //reconnect or recreate
       int bsize=buffer->size();
       for(auto it=itl.begin(); it!=itl.end() && (it+1)!=itl.end(); it+=2)
@@ -317,7 +326,7 @@ template <class T> class SharedBuffer
     {
       check_alive();
       if(buffer==NULL) return vec.end(); //can not read
-      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
+      if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
       check_mem(); //reconnect or recreate
       int bsize=buffer->size();
       if(max_len<=0 || bsize<max_len) max_len=bsize; 
@@ -339,12 +348,12 @@ template <class T> class SharedBuffer
       return vec.begin()+oldpos;
     };
 
-    //removes a certain number of elements from the buffer
+    //Removes a certain number of elements from the buffer
     int resize(unsigned int new_size)
     {
       check_alive();
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
-      boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
       check_mem(); //reconnect or recreate
       int pops=buffer->size()-new_size;
       if(pops<=0) return 0; //nothing to be done
@@ -382,9 +391,42 @@ template <class T> class SharedBuffer
       else return -1;
     };
 
+    //Get the shared buffer name
     inline std::string name()
     { 
       return mem_name;
+    };
+
+    //Aquire an exclusive lock, any operation, writing and reading is possible after that
+    //but no other thread can access the buffer until released again with unlock(). 
+    inline void lock()
+    {
+      if(!locked) nm->lock();
+      locked = true;
+    };
+
+    //Release the execlusive lock. After that other threads can normally access the buffer.
+    //This function can be called even if the buffer has not been locked yet.
+    inline void unlock()
+    {
+      if(locked){ nm->unlock(); locked = false; }
+    };
+
+    //A shared buffer has a user info attached (int) that can be use to pass messages
+    //here we set the message value
+    inline void set_user_info(int info)
+    {
+      if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      if(stat) stat->user_info = info;
+    };
+
+    //A shared buffer has a user info attached (int) that can be use to pass messages
+    //here we get the message value
+    int get_user_info()
+    {
+      if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
+      if(stat) return stat->user_info;
+      return 0;
     };
 
 };

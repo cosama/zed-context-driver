@@ -111,6 +111,10 @@ class ZEDWrapperPublic {
     //be fine.
     void setFrameRate(double hertz);
 
+    //Set the rate at which the camera runs in the background, default is 30, which should
+    //be fine.
+    void setCameraRate(double hertz);
+
     //Set a rate (Hz) at which the mapping mesh is extracted, won't be used.
     void setMeshRate(double hertz);
 

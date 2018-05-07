@@ -1,10 +1,16 @@
 //compiler flag for shared memory or shared file
 //#define USE_MANAGED_SHARED_MEMORY
 
+// ZED Wrapper (for messages) and shared buffer includes
+#include "SharedBuffer.hpp"
+#include "MsgDefinition.hpp"
+#include "SBUtilities.hpp"
+
 // Standard includes
 #include <iostream>
 #include <string>
 #include <chrono>
+#include <thread>
 #include <signal.h>
 
 // ZED SDK include
@@ -13,10 +19,6 @@
 // OpenCV include (for display)
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
-
-// ZED Wrapper (for messages) and shared buffer includes
-#include "SharedBuffer.hpp"
-#include "MsgDefinition.hpp"
 
 // Using std and sl namespaces
 using namespace std;
@@ -34,6 +36,7 @@ int main(int argc, char **argv) {
 
   signal(SIGINT, &handler); //initiate the signal handler, so that on Ctrl+C the buffer does not get stuck
   std::chrono::system_clock::time_point last_time=std::chrono::system_clock::now();
+  long long last_buf=0;
 
   if(argc==1){ std::cout << "Need the buffer address as second argument" << std::endl; return 0; }
 
@@ -44,7 +47,7 @@ int main(int argc, char **argv) {
     //Example of how to read and display images from the shared buffer
     if(tmp.compare("image")==0)
     {
-      long long time_sum=0;
+      long long time_sum=0, buf_sum;
       int time_cnt=0;
       std::cerr << "Connect to image buffer" << std::endl;
 
@@ -57,35 +60,32 @@ int main(int argc, char **argv) {
 
       //read the pictures until 'q' is pressed (the opencv window must be open and selected for this to work)
       char key = ' ';
+      vector<ImageHeaderMsg> outbuf;               //a STL vector to read out all ImageheaderMsg blocks currently stored to the buffer
+      std::vector<ImageHeaderMsg>::iterator iter;
+      ImageHeaderMsg *c=NULL;
       while(key != 'q' && stop == false)
       {
-        vector<ImageHeaderMsg> outbuf;               //a STL vector to read out all ImageheaderMsg blocks currently stored to the buffer
-        auto p=buf.read(outbuf,1);                   //read the messages from the buffer and move the iterator to the begining (always at outbuf[0] in this case)
-        ImageHeaderMsg* hdr=(ImageHeaderMsg*)&*p;    //create a pointer to the header of the image (first image block)
-        p=buf.read(outbuf, (20*(hdr->block_nmb+1)-1)); 
-        p=p-1;
-        while(p!=outbuf.end())          //display all the images that are currently stored to the local buffer (outbuf)
-        {
-          ImageHeaderMsg *c=(ImageHeaderMsg*)&*p;           //create a pointer to the header of the image (first image block)
-          p++;                                              //move the iterator to the begining of the image data
-          //std::cout << "Showing " << c->size << ", " << c->cols << "x" << c->rows << ", " << c->type << std::endl;
-          cv::Mat mymat(c->rows, c->cols, c->type, &*(p));  //create a OpenCV matrix that contains the image data
+        ImageHeaderMsg* c = read_image_from_buffer(buf, 20, 10, 1000);
+        if(c == nullptr) break;
+        cv::Mat mymat(c->rows, c->cols, c->type, c->data);
+        imshow( "Display window", mymat );                //prepare the image in a window
+        key = cv::waitKey(5);                             //show the image and wait for a keystroke in the window
 
-          imshow( "Display window", mymat );                //prepare the image in a window
-          key = cv::waitKey(5);                             //show the image and wait for a keystroke in the window
-          p+=c->block_nmb;                                  //move the pointer to the header of the next image
-
-          //the rest is to print the image retrieval frequency and image data to the terminal
-          std::chrono::system_clock::time_point time = std::chrono::system_clock::now();
-          long long delta = std::chrono::duration_cast<std::chrono::microseconds>(time - last_time).count();
-          last_time=time;
-          time_sum+=delta; time_cnt++;
-          if(time_sum>1e6){
-          std::cout << "Extracted an image of " << c->cols << "x" << c->rows << " (" << c->size << "bytes, type "
-                    << c-> type << ") at " << 1e6*time_cnt/time_sum << "Hz" << std::endl; 
-            time_sum=0; time_cnt=0;
-          };
-        }
+        //the rest is to print the image retrieval frequency and image data to the terminal
+        std::chrono::system_clock::time_point time = std::chrono::system_clock::now();
+        long long buf_time = c->time.sec*1e6 + c->time.usec; 
+        long long rdelta = std::chrono::duration_cast<std::chrono::microseconds>(time - last_time).count();
+        long long bdelta = buf_time - last_buf;
+        if(last_buf==0){ bdelta=0; }
+        last_time=time;
+        last_buf =buf_time;
+        time_sum+=rdelta; buf_sum+=bdelta; time_cnt++;
+        if(time_sum>1e6){
+        std::cout << "Extracted an image of " << c->cols << "x" << c->rows << " (" << c->size << "bytes, type "
+                  << c-> type << ") at real " << 1e6*time_cnt/time_sum << "Hz buffer " << 1e6*time_cnt/buf_sum << "Hz" << std::endl; 
+          time_sum=0; buf_sum=0; time_cnt=0;
+        };
+        //}
       }
       return 0;
     }
@@ -106,14 +106,10 @@ int main(int argc, char **argv) {
       //is connected to it anymore and we can stop reading from it and clearing up and terminate
       while(buf2.is_owner() == false && stop == false)
       {
-        vector<PoseMsg> outbuf;    //a STL vector to read out all PoseMsg blocks currently stored to the buffer
-        auto p=buf2.read(outbuf);  //read the messages from the buffer and move the iterator to the begining (always at outbuf[0] in this case)
-        while(p!=outbuf.end())     //print all the values that are currently stored to the local buffer (outbuf)
-        {
-          std::cout << p->time.sec << "." << setfill('0') << setw(6) << p->time.usec << setfill(' ') << setw(0) << " " << p->position[0] << " " << p->position[1] << " " << p->position[2] << " " 
-           << p->orientation[0] << " " << p->orientation[1] << " " << p->orientation[2] << " " << p->orientation[3] << std::endl;
-          p++;
-        }
+        PoseMsg *p = read_fixed_from_buffer(buf2, 20, 10, 1000);
+        if(p == nullptr) break;
+        std::cout << p->time.sec << "." << setfill('0') << setw(6) << p->time.usec << setfill(' ') << setw(0) << " " << p->position[0] << " " << p->position[1] << " " << p->position[2] << " " 
+          << p->orientation[0] << " " << p->orientation[1] << " " << p->orientation[2] << " " << p->orientation[3] << std::endl;
       }
       return 0;
     }
@@ -155,7 +151,6 @@ int main(int argc, char **argv) {
   printf("ZED Camera FPS            : %d\n", (int) zed.getCameraFPS());
 
   sl::Mat zed_image;                   //Create a ZED SDK image matrix (similar to OpenCV image matrices)
-  ImageHeaderMsg *pstart;              //Create an image pointer
   ImageHeaderMsg c = {0};              //And an empty image header
   int cnt=0;
   while (stop == false) {              //Stop only on Ctrl+C
@@ -169,20 +164,17 @@ int main(int argc, char **argv) {
       c.cols=(int) zed_image.getWidth();
       c.rows=(int) zed_image.getHeight();
       c.type=CV_8UC4;
+      c.block_size = (int)(sizeof(ImageHeaderMsg));
+      c.block_nmb  = (int)(c.size/c.block_size);
 
       //put the pointer to the start of the image block
-      pstart= (ImageHeaderMsg*)zed_image.getPtr<sl::uchar1>(sl::MEM_CPU);
+      c.data = (void*)zed_image.getPtr<sl::uchar1>(sl::MEM_CPU);
 
       //write the header and the image data to the buffer
-      int len = buf3.write({ &c, &c+1, pstart, pstart+c.size/sizeof(ImageHeaderMsg) });
-
-      //control the size of the buffer by resizing it if it grows to large
-      //it assumes that all images are the same size (which is the case for the ZED)
-      int pops=0;
-      if(cnt>100) pops=buf3.resize(900*(c.size/sizeof(ImageHeaderMsg)+1));
+      int len = write_image_to_buffer(buf3, c, 100);
 
       //print some information about what was just stored to the buffer
-      if(cnt%30==0) std::cout << "Wrote " << c.size+sizeof(ImageHeaderMsg) << " Buffer length " << len << "-" << pops << " " << zed.getCurrentFPS() << "Hz" << std::endl;
+      if(cnt%30==0) std::cout << "Wrote " << c.size+sizeof(ImageHeaderMsg) << " Buffer length " << len << " " << zed.getCurrentFPS() << "Hz" << std::endl;
       cnt++;
     }
     sl::sleep_ms(20); //the SDK has it's own sleep function

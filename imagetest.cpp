@@ -1,112 +1,124 @@
-///////////////////////////////////////////////////////////////////////////
-//
-// Copyright (c) 2017, STEREOLABS.
-//
-// All rights reserved.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////
+/***********************************************************************************
+ * Sample of how to write and read images from/to shared buffers.
+ * 
+ * Author:  Marco Salathe <msalathe@lbl.gov>
+ * Date:    Mai 2018
+ * License: If you like to use this code, please contact the author.
+ *
+ **********************************************************************************/
 
-
-/********************************************************************************
- ** This sample demonstrates how to grab images and change the camera settings **
- ** with the ZED SDK                                                           **
- ********************************************************************************/
-
+#include "SharedBuffer.hpp"
+#include "MsgDefinition.hpp"
+#include "SBUtilities.hpp"
 
  // Standard includes
 #include <iostream>
 #include <string.h>
-
-// ZED include
-#include <boost/interprocess/containers/vector.hpp>
-//#include <sl_zed/Camera.hpp>
+#include <ctime>
+#include <thread>
+#include <signal.h>
 
 // OpenCV include (for display)
 //#include "opencv2/opencv.hpp"
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
-#include "SharedBuffer.hpp"
-#include <ctime>
-
 // Using std and sl namespaces
 using namespace std;
 using namespace cv;
 
-
-struct C
-{
-    int size;
-    int cols; 
-    int rows;
-    int type;
-};
+//we need to make sure the constructor is called on exit (Ctrl+C) otherwise
+//the mutex might get stuck in a looked state
+bool stop = false;
+void handler(int) {
+    std::cout << "Will exit" << std::endl;
+    stop = true;
+}
 
 int main(int argc, char **argv) {
+  signal(SIGINT, &handler); //initiate the signal handler, so that on Ctrl+C the buffer does not get stuck
   std::cout << "Connect buffer" << std::endl;
-  SharedBuffer <double> buf("ZedImageBuffer");
+  SharedBuffer <ImageHeaderMsg> buf("ImageBuffer");
   std::cout << "buffer connected as owner " << buf.is_owner() << std::endl;
+  long long last_time = 0, time_sum = 0, time_cnt=0;
 
-  if(argc>1)
+  if(buf.is_owner() == false)
   {
     std::cout << "Reading from buffer of size " << buf.size() << std::endl;
-
     int i=0, key;
-    while(key != 'q')
+    while(key != 'q' && stop == false)
     {
-      vector<double> outbuf;
-      buf.read(outbuf);
-      auto p =outbuf.begin();
-      std::cout << "Printing " << outbuf.size() << std::endl;
-      if(outbuf.size()>0){
-        C *c=(C*)&*p;
-        std::cout << "Printing " << outbuf.size()*sizeof(double)/c->size << " " << c->size << " of " << c->cols << "x" << c->rows << std::endl;
-        imshow( "Display window", cv::Mat(c->rows, c->cols, c->type, &*(p+sizeof(C)/sizeof(double))));                   // Show our image inside it.
-      }
-      key = cv::waitKey(5);                                          // Wait for a keystroke in the window
+      ImageHeaderMsg* hdr = read_image_from_buffer(buf, 20, 10, 1000);
+      if(hdr == nullptr) break;
+      cv::Mat mymat(hdr->rows, hdr->cols, hdr->type, hdr->data);
+      imshow( "Display window", mymat );                //prepare the image in a window
+      key = cv::waitKey(5);                             //show the image and wait for a keystroke in the window
 
+      //just a bit of output
+      long long time = hdr->time.sec*1e6 + hdr->time.usec; 
+      long long delta = time - last_time;
+      if(last_time==0){ delta=0; }
+      last_time = time;
+      time_sum+=delta; time_cnt++;
+      if(time_sum>1e6){
+        std::cout << "Extracted " << time_cnt << " images of " << hdr->cols << "x" << hdr->rows << " (" << hdr->size << "bytes, type "
+                << hdr->type << ") at " << 1e6*time_cnt/time_sum << "Hz" << std::endl; 
+        time_sum=0; time_cnt=0;
+      }
     }
-    //buf.flip_owner();
     return 0;
   }
 
-  // Create a Mat to store images
-  cv::Mat zed_image;
-  zed_image = cv::imread("../bike.jpg");
-  if(! zed_image.data )                              // Check for invalid input
+  cv::Mat image;                                        // Create a Mat to store images to
+  image = cv::imread("../myimage.jpg");                 // Read image from file
+  if(! image.data )                                     // Check for invalid input
   {
-    std::cout <<  "Could not open or find the image" << std::endl ;
+    std::cout <<  "ERROR: Could not open or find the image" << std::endl ;
     return -1;
   }
 
-  C c = {(int)(zed_image.total()*zed_image.elemSize()), zed_image.cols, zed_image.rows, zed_image.type()};
-  auto pstart= (double*)zed_image.data;
-  auto hstart = (double*)&c;
-  std::clock_t begin = std::clock();
-  int loops=0;
-  std::cout << "Sizes " << sizeof(C)/sizeof(double) << " " << c.size/sizeof(double) << std::endl;
-  while('q'!=cv::waitKey(5))
+  //Create the image header
+  ImageHeaderMsg hdr;
+  hdr.size       = (int)(image.total()*image.elemSize());
+  hdr.block_size = (int)(sizeof(ImageHeaderMsg));
+  hdr.block_nmb  = (int)(hdr.size/hdr.block_size+1.0); //add a block if required
+  hdr.cols       = (int)(image.cols);
+  hdr.rows       = (int)(image.rows);
+  hdr.type       = image.type();
+
+  std::cout << "Total image size " << hdr.size << " blocks " << hdr.block_nmb << " blocksize " << hdr.block_size << std::endl;
+  
+   //Make sure if the hdr.size doesn't fit sizeof(ImageHeaderMsg) perfectly
+   //we do not exceed the memory and cause a segfault
+  int elm_on_row = hdr.size/image.rows;
+  image.reserve(hdr.block_size*hdr.block_nmb/elm_on_row+1);
+  hdr.data      = (void*)image.data;
+
+
+  while(stop == false)
   {
-    int cnt=buf.write({hstart, hstart+sizeof(C)/sizeof(double), pstart, pstart+c.size/sizeof(double)});
-    if(loops>10) buf.resize(10*(sizeof(C)/sizeof(double)+c.size/sizeof(double)));
-    std::clock_t end = std::clock();
-    std::cout << "Wrote " << cnt << " elements to buffer at " <<  double(end - begin) / CLOCKS_PER_SEC << "sec" << std::endl;
-    begin=end;
-    loops++;
+    //calculate accurate time stamps
+    std::chrono::system_clock::time_point stime = std::chrono::system_clock::now();
+    std::chrono::seconds const sec = std::chrono::duration_cast<std::chrono::seconds>(stime.time_since_epoch());
+    hdr.time.sec  = sec.count();
+    hdr.time.usec = std::chrono::duration_cast<std::chrono::microseconds>(stime.time_since_epoch() - sec).count();
+
+    //write the image to the buffer until Ctrl+C is pressed
+    write_image_to_buffer(buf, hdr, 100);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10)); //don't write faster than 100Hz
+
+    //just a bit of output
+    long long time = hdr.time.sec*1e6 + hdr.time.usec; 
+    long long delta = time - last_time;
+    if(last_time==0){ delta=0; }
+    last_time = time;
+    time_sum+=delta; time_cnt++;
+    if(time_sum>1e6){
+      std::cout << "Wrote " << time_cnt << " images of " << hdr.cols << "x" << hdr.rows << " (" << hdr.size << "bytes, type "
+              << hdr.type << ") at " << 1e6*time_cnt/time_sum << "Hz" << std::endl; 
+      time_sum=0; time_cnt=0;
+    }
   }
-  //buf.flip_owner();
   return 0;
 }
 

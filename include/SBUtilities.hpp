@@ -102,7 +102,8 @@ template <class T> T* read_fixed_from_buffer(SharedBuffer<T> &topic, int number,
     iter=topic.read(buffer, number);
     cnt++;
   }
-  if(iter==buffer.end()){ topic.unlock(); return nullptr; }
+  topic.unlock();
+  if(iter==buffer.end()){ return nullptr; }
   T *hdr=(T*)&*iter;             //create a pointer to the header of the image (first image block)
   iter++;                        //move the iterator to the begining of the image data
   return hdr;

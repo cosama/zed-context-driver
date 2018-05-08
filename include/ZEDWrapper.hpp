@@ -13,14 +13,11 @@
 #define ZEDWRAPPER_HPP
 
 //Shared memory buffer wrapper
-#include "SharedBuffer.hpp"
+#include "SimpleBuffer.hpp"
 
 //Message definitions
 #include "MsgDefinition.hpp"
 #include "ZEDMsgDefinition.hpp"
-
-//Utilities
-#include "SBUtilities.hpp"
 
 //OpenCV is to define the matrix types and to save images to disk
 #include <opencv2/opencv.hpp>
@@ -252,11 +249,11 @@ class ZEDWrapper {
   private:
     std::thread *device_poll_thread;
 
-    SharedBuffer<ImageHeaderMsg> pub_left;
-    SharedBuffer<ImageHeaderMsg> pub_right;
-    SharedBuffer<ImageHeaderMsg> pub_depth;
-    SharedBuffer<PoseMsg> pub_odom;
-    SharedBuffer<ImuMsg> pub_imu;
+    SimpleBuffer<ImageHeaderMsg> pub_left;
+    SimpleBuffer<ImageHeaderMsg> pub_right;
+    SimpleBuffer<ImageHeaderMsg> pub_depth;
+    SimpleBuffer<PoseMsg> pub_odom;
+    SimpleBuffer<ImuMsg> pub_imu;
 
     // Launch file parameters
     int resolution;
@@ -318,7 +315,7 @@ class ZEDWrapper {
     std::string svo_filename;
 
     //publish odometry data to a shared memory buffer
-    void publishOdom(sl::Pose odom_in, SharedBuffer<PoseMsg> &pub_odom, Timestamp t, int max_odom)
+    void publishOdom(sl::Pose odom_in, SimpleBuffer<PoseMsg> &pub_odom, Timestamp t, int max_odom)
     {
       static PoseMsg odom_data;
 
@@ -338,12 +335,12 @@ class ZEDWrapper {
       odom_data.confidence = odom_in.pose_confidence;
 
       // Publish odometry message
-      write_fixed_to_buffer(pub_odom, odom_data, max_odom);
+      pub_odom.write_simple(odom_data, max_odom);
     }
 
 
     // publish imu data to a shared memory buffer
-    void publishIMU(sl::IMUData imu_in, SharedBuffer<ImuMsg> &pub_imu, Timestamp t, int max_imu)
+    void publishIMU(sl::IMUData imu_in, SimpleBuffer<ImuMsg> &pub_imu, Timestamp t, int max_imu)
     {
       static ImuMsg imu_data;
 
@@ -365,12 +362,12 @@ class ZEDWrapper {
       imu_data.linear_acceleration[2] = -imu_in.linear_acceleration[1];
 
       // Publish imu message
-      write_fixed_to_buffer(pub_imu, imu_data, max_imu);
+      pub_imu.write_simple(imu_data, max_imu);
     }
 
 
     // publish an image (stored as an ZED SDK Matrix) to a shared memory buffer
-    void publishImage(sl::Mat img_in, SharedBuffer<ImageHeaderMsg> &pub_img, Timestamp t, int max_img)
+    void publishImage(sl::Mat img_in, SimpleBuffer<ImageHeaderMsg> &pub_img, Timestamp t, int max_img)
     {
       static int msgsize=sizeof(ImageHeaderMsg);
       static int cur_img=0;
@@ -416,7 +413,7 @@ class ZEDWrapper {
       }
 
       hdr.data = (void*)img_in.getPtr<sl::uchar1>(sl::MEM_CPU);
-      write_image_to_buffer(pub_img, hdr, max_img);
+      pub_img.write_simple(hdr, max_img);
     }
 
     void device_poll()

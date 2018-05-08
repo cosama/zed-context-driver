@@ -7,9 +7,8 @@
  *
  **********************************************************************************/
 
-#include "SharedBuffer.hpp"
+#include "SimpleBuffer.hpp"
 #include "MsgDefinition.hpp"
-#include "SBUtilities.hpp"
 
  // Standard includes
 #include <iostream>
@@ -38,7 +37,7 @@ void handler(int) {
 int main(int argc, char **argv) {
   signal(SIGINT, &handler); //initiate the signal handler, so that on Ctrl+C the buffer does not get stuck
   std::cout << "Connect buffer" << std::endl;
-  SharedBuffer <ImageHeaderMsg> buf("ImageBuffer");
+  SimpleBuffer <ImageHeaderMsg> buf("ImageBuffer");
   std::cout << "buffer connected as owner " << buf.is_owner() << std::endl;
   long long last_time = 0, time_sum = 0, time_cnt=0;
 
@@ -48,7 +47,7 @@ int main(int argc, char **argv) {
     int i=0, key;
     while(key != 'q' && stop == false)
     {
-      ImageHeaderMsg* hdr = read_image_from_buffer(buf, 20, 10, 1000);
+      ImageHeaderMsg* hdr = buf.read_simple(20, 10, 1000);
       if(hdr == nullptr) break;
       cv::Mat mymat(hdr->rows, hdr->cols, hdr->type, hdr->data);
       imshow( "Display window", mymat );                //prepare the image in a window
@@ -104,7 +103,7 @@ int main(int argc, char **argv) {
     hdr.time.usec = std::chrono::duration_cast<std::chrono::microseconds>(stime.time_since_epoch() - sec).count();
 
     //write the image to the buffer until Ctrl+C is pressed
-    write_image_to_buffer(buf, hdr, 100);
+    buf.write_simple(hdr, 100);
     std::this_thread::sleep_for(std::chrono::milliseconds(10)); //don't write faster than 100Hz
 
     //just a bit of output

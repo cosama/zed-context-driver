@@ -2,9 +2,8 @@
 //#define USE_MANAGED_SHARED_MEMORY
 
 // ZED Wrapper (for messages) and shared buffer includes
-#include "SharedBuffer.hpp"
+#include "SimpleBuffer.hpp"
 #include "MsgDefinition.hpp"
-#include "SBUtilities.hpp"
 
 // Standard includes
 #include <iostream>
@@ -52,7 +51,7 @@ int main(int argc, char **argv) {
       std::cerr << "Connect to image buffer" << std::endl;
 
       //Connect to a buffer containing images (ImageHeaderMsg defines both the header and block size, one image is composed of multiple blocks)
-      SharedBuffer <ImageHeaderMsg> buf(argv[1]);
+      SimpleBuffer <ImageHeaderMsg> buf(argv[1]);
 
       //the owner of the buffer creates and cleans up the shared buffer and usually writes to the buffer
       //it should be false (0) if another process is writting and owning the buffer
@@ -65,7 +64,7 @@ int main(int argc, char **argv) {
       ImageHeaderMsg *c=NULL;
       while(key != 'q' && stop == false)
       {
-        ImageHeaderMsg* c = read_image_from_buffer(buf, 20, 10, 1000);
+        ImageHeaderMsg* c = buf.read_simple(20, 10, 1000);
         if(c == nullptr) break;
         cv::Mat mymat(c->rows, c->cols, c->type, c->data);
         imshow( "Display window", mymat );                //prepare the image in a window
@@ -96,7 +95,7 @@ int main(int argc, char **argv) {
       std::cerr << "Connect to odometry buffer" << std::endl;
 
       //Connect to a buffer containing PoseMsg blocks
-      SharedBuffer <PoseMsg> buf2(argv[1]);
+      SimpleBuffer <PoseMsg> buf2(argv[1]);
 
       //the owner of the buffer creates and cleans up the shared buffer and usually writes to the buffer
       //it should be false (0) if another process is writting and owning the buffer
@@ -106,7 +105,7 @@ int main(int argc, char **argv) {
       //is connected to it anymore and we can stop reading from it and clearing up and terminate
       while(buf2.is_owner() == false && stop == false)
       {
-        PoseMsg *p = read_fixed_from_buffer(buf2, 20, 10, 1000);
+        PoseMsg *p = buf2.read_simple(20, 10, 1000);
         if(p == nullptr) break;
         std::cout << p->time.sec << "." << setfill('0') << setw(6) << p->time.usec << setfill(' ') << setw(0) << " " << p->position[0] << " " << p->position[1] << " " << p->position[2] << " " 
           << p->orientation[0] << " " << p->orientation[1] << " " << p->orientation[2] << " " << p->orientation[3] << std::endl;
@@ -119,7 +118,7 @@ int main(int argc, char **argv) {
   std::cerr << "Create image buffer" << std::endl;
 
   //create a buffer containing images (ImageHeaderMsg defines both the header and block size, one image is composed of multiple blocks)
-  SharedBuffer <ImageHeaderMsg> buf3(argv[1]);
+  SimpleBuffer <ImageHeaderMsg> buf3(argv[1]);
 
   //the owner of the buffer creates and cleans up the shared buffer and usually writes to the buffer
   //it should be true (1) in this case as the process is writting and owning the buffer
@@ -171,7 +170,7 @@ int main(int argc, char **argv) {
       c.data = (void*)zed_image.getPtr<sl::uchar1>(sl::MEM_CPU);
 
       //write the header and the image data to the buffer
-      int len = write_image_to_buffer(buf3, c, 100);
+      int len = buf3.write_simple(c, 100);
 
       //print some information about what was just stored to the buffer
       if(cnt%30==0) std::cout << "Wrote " << c.size+sizeof(ImageHeaderMsg) << " Buffer length " << len << " " << zed.getCurrentFPS() << "Hz" << std::endl;

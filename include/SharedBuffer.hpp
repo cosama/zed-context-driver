@@ -167,7 +167,7 @@ template <class T> class SharedBuffer
       #ifdef USE_MANAGED_SHARED_MEMORY
       boost::interprocess::shared_memory_object::remove(mem_name.c_str());
       #else
-      boost::interprocess::file_mapping::remove(mem_name.c_str());
+      //boost::interprocess::file_mapping::remove(mem_name.c_str());
       #endif
       boost::interprocess::named_sharable_mutex::remove(mut_name.c_str());
       boost::interprocess::shared_memory_object::remove(sta_name.c_str());

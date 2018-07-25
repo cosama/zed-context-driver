@@ -1,8 +1,9 @@
 /***********************************************************************************
  * Header file that defines the thrift message structures for the ZEDMini
  * 
- * Author: Marco Salathe <msalathe@lbl.gov>
- * Date:   March 2018
+ * Author:  Marco Salathe <msalathe@lbl.gov>
+ * Date:    March 2018
+ * License: See License.txt in parent folder of this repository.
  *
  **********************************************************************************/
 

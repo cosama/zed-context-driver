@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.4)
 project(zed-context-driver)
 
+option(LOCAL_OPENCV "LOCAL_OPENCV" OFF)
+
 if(COMMAND cmake_policy)
   cmake_policy(SET CMP0003 OLD)
   cmake_policy(SET CMP0015 OLD)
@@ -8,10 +10,17 @@ endif(COMMAND cmake_policy)
 
 set(EXECUTABLE_OUTPUT_PATH ".")
 
+if(LOCAL_OPENCV)
+  find_package(OpenCV REQUIRED PATHS ${CMAKE_CURRENT_SOURCE_DIR}/opencv-static NO_DEFAULT_PATH)
+  message(STATUS "Found local OpenCV ${OpenCV_VERSION} in ${OpenCV_INSTALL_PATH}")
+else()
+  find_package(OpenCV REQUIRED)  
+  message(STATUS "Found global OpenCV ${OpenCV_VERSION} in ${OpenCV_INSTALL_PATH}")
+endif(LOCAL_OPENCV)
+
 find_package(ZED 2 REQUIRED)
 find_package(CUDA ${ZED_CUDA_VERSION} EXACT REQUIRED)
 find_package(Boost 1.40 REQUIRED)
-find_package(OpenCV REQUIRED PATHS ${CMAKE_CURRENT_SOURCE_DIR}/opencv-static)
 
 include_directories(${CUDA_INCLUDE_DIRS})
 include_directories(${ZED_INCLUDE_DIRS})
@@ -42,8 +51,8 @@ target_link_libraries(buffertest -lrt -lpthread)
 target_link_libraries(imagetest ${OpenCV_LIBRARIES} -lrt -lpthread)
 
 set(directory delivery)
-add_custom_target(delivery ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${directory})
+add_custom_target(delivery
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${directory} DEPENDS delivery_libs delivery_incs)
 add_custom_command(
         TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_CURRENT_SOURCE_DIR}/delivery/zeddriver.cpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/zeddriver.cpp)
@@ -57,7 +66,7 @@ add_custom_command(
         TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_CURRENT_SOURCE_DIR}/delivery/Readme.md ${CMAKE_CURRENT_BINARY_DIR}/${directory}/Readme.md)
 
-add_custom_target(delivery_libs ALL
+add_custom_target(delivery_libs
     COMMAND ${CMAKE_COMMAND} -E make_directory ${directory}/lib)
 add_custom_command(
         TARGET delivery_libs POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
@@ -65,11 +74,11 @@ add_custom_command(
 add_custom_command(
         TARGET delivery_libs POST_BUILD COMMAND strip --strip-all ${CMAKE_CURRENT_BINARY_DIR}/${directory}/lib/libzedwrapper.so)
 
-add_custom_target(delivery_incs ALL
+add_custom_target(delivery_incs
     COMMAND ${CMAKE_COMMAND} -E make_directory ${directory}/include)
 add_custom_command(
-        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
+        TARGET delivery_incs POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
         ${CMAKE_CURRENT_SOURCE_DIR}/include/ZEDWrapperPublic.hpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/include/ZEDWrapperPublic.hpp)
 add_custom_command(
-        TARGET delivery POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
+        TARGET delivery_incs POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy 
         ${CMAKE_CURRENT_SOURCE_DIR}/include/ZEDMsgDefinition.hpp ${CMAKE_CURRENT_BINARY_DIR}/${directory}/include/ZEDMsgDefinition.hpp)

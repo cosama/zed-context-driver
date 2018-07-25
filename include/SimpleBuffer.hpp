@@ -4,9 +4,13 @@
  * 
  * Author:  Marco Salathe <msalathe@lbl.gov>
  * Date:    Mai 2018
- * License: If you like to use this code, please contact the author.
+ * License: See License.txt in parent folder of this repository.
  *
  **********************************************************************************/
+
+#ifndef SIMPLEBUFFER_HPP
+#define SIMPLEBUFFER_HPP
+
 #include "SharedBuffer.hpp"
 #include "MsgDefinition.hpp"
 
@@ -128,3 +132,5 @@ template<> int SimpleBuffer<ImageHeaderMsg>::write_simple(ImageHeaderMsg &hdr, i
   SharedBuffer<ImageHeaderMsg>::unlock();
   return cur_img;
 };
+
+#endif //#ifndef SIMPLEBUFFER_HPP

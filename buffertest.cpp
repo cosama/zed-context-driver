@@ -1,3 +1,12 @@
+/***********************************************************************************
+ * Shared buffer testing script.
+ * 
+ * Author:  Marco Salathe <msalathe@lbl.gov>
+ * Date:    Mai 2018
+ * License: See License.txt in parent folder of this repository.
+ *
+ **********************************************************************************/
+
 #include <SharedBuffer.hpp>
 #include <iostream>
 //#include <unistd.h>

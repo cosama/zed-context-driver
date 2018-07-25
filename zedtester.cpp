@@ -1,3 +1,12 @@
+/***********************************************************************************
+ * Small script to test shared buffers
+ * 
+ * Author:  Marco Salathe <msalathe@lbl.gov>
+ * Date:    July 2018
+ * License: See License.txt in parent folder of this repository.
+ *
+ **********************************************************************************/
+
 //compiler flag for shared memory or shared file
 //#define USE_MANAGED_SHARED_MEMORY
 

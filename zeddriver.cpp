@@ -4,8 +4,9 @@
  * 
  * Inspired by https://github.com/stereolabs/zed-ros-wrapper
  *
- * Author: Marco Salathe <msalathe@lbl.gov>
- * Date:   March 2018
+ * Author:  Marco Salathe <msalathe@lbl.gov>
+ * Date:    March 2018
+ * License: See License.txt in parent folder of this repository.
  *
  **********************************************************************************/
 //#define USE_MANAGED_SHARED_MEMORY

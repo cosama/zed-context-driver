@@ -481,6 +481,12 @@ class ZEDWrapper {
           tstamp.sec  = sec.count();
           tstamp.usec = std::chrono::duration_cast<std::chrono::microseconds>(time.time_since_epoch() - sec).count();
 
+          if(from_svo)
+          {
+             sl::timeStamp ts_new=zed.getTimestamp(sl::TIME_REFERENCE::TIME_REFERENCE_IMAGE);
+             tstamp.sec = (int)(ts_new/1e9);
+             tstamp.usec = (int)(ts_new/1e3 - tstamp.sec*1e6);
+          }
           //update rates, so that they can be dynamically set
           loop_time.set(1e6/(camera_rate>imu_rate?camera_rate:imu_rate));
 

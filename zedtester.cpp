@@ -62,13 +62,22 @@ int main(int argc, char **argv) {
       vector<ImageHeaderMsg> outbuf;               //a STL vector to read out all ImageheaderMsg blocks currently stored to the buffer
       std::vector<ImageHeaderMsg>::iterator iter;
       ImageHeaderMsg *c=NULL;
+      int cnt = 0;
       while(key != 'q' && stop == false)
       {
         ImageHeaderMsg* c = buf.read_simple(20, 10, 1000);
         if(c == nullptr) break;
         cv::Mat mymat(c->rows, c->cols, c->type, c->data);
+
+        if(argc>3)
+        {
+          std::string jpgname = std::to_string(cnt);
+          jpgname =std::string(argv[3]) + std::string(6 - jpgname.length(), '0') + jpgname + ".jpg";
+          imwrite(jpgname, mymat);
+          cnt++;
+        }
         imshow( "Display window", mymat );                //prepare the image in a window
-        key = cv::waitKey(5);                             //show the image and wait for a keystroke in the window
+        key = cv::waitKey(20);                            //show the image and wait for a keystroke in the window
 
         //the rest is to print the image retrieval frequency and image data to the terminal
         std::chrono::system_clock::time_point time = std::chrono::system_clock::now();

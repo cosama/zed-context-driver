@@ -127,6 +127,9 @@ class ZEDWrapperPublic {
     //900 (at 30Hz this means 30sec) seems the way to go.
     void setBufferLength(int len);
 
+    //If set to true after searching for 10s the position (odom) will be reset.
+    void setReset(bool flag);
+
     //Perfom a recalibration of the camera. Is done when started and should be done
     //automatically. Haven't seen any need for it yet.
     void doAutoCalibration();

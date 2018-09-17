@@ -134,6 +134,11 @@ void ZEDWrapperPublic::setSVOFile(std::string svo_file)
   internal->setSVOFile(svo_file);
 };
 
+void ZEDWrapperPublic::setReset(bool flag)
+{
+  internal->setReset(flag);
+};
+
 bool ZEDWrapperPublic::getMappingFlag()
 {
   return internal->getMappingFlag();

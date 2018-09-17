@@ -45,6 +45,7 @@ struct CameraIntrinsics {
   double fx, fy; //x/y vocal length in pixel #'s
   double K[3];   //radial distortion coefficients
   double P[2];   //tangential distortion coefficients
+  double d;      // distance between left and right image
 };
 
 //Camera information structure
@@ -178,12 +179,16 @@ struct GpsMsg {
 };
 
 struct SBEOutputMsg{
-	// PSI fill in content of SBE message.  We assume this will be a subset of WIND Thrift Localization outupt structure.
-	// We also don't care if the 
-	/* Also we should consider whether we should expect 1 localization output or a multitude of locations.  Including:
-		Same "Event" different time
-		Same "Event" different analysis states -- e.g. based on LBL odometry vs. based on raw GPS odometry
-		*/
+  // PSI fill in content of SBE message.  We assume this will be a subset of WIND Thrift Localization outupt structure.
+  // We also don't care if the 
+  /* Also we should consider whether we should expect 1 localization output or a multitude of locations.  Including:
+     Same "Event" different time
+     Same "Event" different analysis states -- e.g. based on LBL odometry vs. based on raw GPS odometry
+  */
+   Timestamp timeStamp;
+   double location[3];
+   double uncertainty[4];
+   Timestamp startTimeStamp, endTimeStamp;
 };
 
 // Configuration and status message. Informs algorithm about 

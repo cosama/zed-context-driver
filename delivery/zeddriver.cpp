@@ -109,6 +109,7 @@ int main(int argc, char** argv)
   std::cout << '\n' << "Server running enter reconfiguration command or 'q' to terminate ..." << '\n' << ">> ";
 
   //read in additional parameters from cin (these can be changed online)
+  bool reset = false;
   do
   {
     std::vector <std::string> a; std::string b, line;
@@ -122,7 +123,8 @@ int main(int argc, char** argv)
     else if(a.size()==2 && a[0].compare("mesh-rate")==0)  zed.setMeshRate(std::stof(a[1]));                       //Change the mesh rate to a given value (arg2 == rate)
     else if(a.size()==2 && a[0].compare("frame-rate")==0) zed.setFrameRate(std::stof(a[1]));                      //Change the frame rate to a given value (arg2 == rate)
     else if(a.size()==2 && a[0].compare("length")==0)     zed.setBufferLength(std::stoi(a[1]));                   //Change the buffer lenght to a given value (arg2 == length)
-    else if(a.size()==2 && a[0].compare("autocalib")==0)  zed.doAutoCalibration();                                //Force an auto calibration (not sure if this does something)
+    else if(a.size()==1 && a[0].compare("autocalib")==0)  zed.doAutoCalibration();                                //Force an auto calibration (not sure if this does something)
+    else if(a.size()==1 && a[0].compare("reset")==0){     reset=!reset; zed.setReset(reset); }                   //Force an auto calibration (not sure if this does something)
     else if(a.size()==2 && a[0].compare("save-map")==0)                                                           //Save the mesh to a file (arg2 == filename)
     {
       if(!zed.getMappingFlag()){ std::cout << "Mapping was not initialized, please restart server first" << std::endl; }

@@ -27,7 +27,6 @@
 #include <sl/Camera.hpp>
 
 //STL
-#include <deque>
 #include <vector>
 #include <iostream>
 #include <sstream>
@@ -289,6 +288,7 @@ class ZEDWrapper {
     bool map_on;
     bool mesh_extracted;
     bool depth_on;
+    bool reset;
 
     sl::VIEW lv, rv;
     CameraInfo info_left, info_right;
@@ -419,6 +419,12 @@ class ZEDWrapper {
 
     void device_poll()
     {
+      if(limg_on) pub_left.resize(0);
+      if(rimg_on) pub_right.resize(0);
+      if(depth_on) pub_depth.resize(0);
+      if(odom_on) pub_odom.resize(0);
+      if(imu_on) pub_imu.resize(0);
+
       MyClock::time_point old_t = MyClock::now();
       MyClock::time_point tmesh = MyClock::now();
       MyClock::time_point tbimg = MyClock::now();
@@ -430,6 +436,7 @@ class ZEDWrapper {
       bool tracking_activated = false;
       bool mapping_activated = false;
       bool from_svo = (zed.getSVONumberOfFrames()>0);
+      int lost_frames = 0;
 
       std::chrono::microseconds camera_time((int)(1e6 / camera_rate)); //in micro seconds
       MyClock::time_point camera_expected = old_t+camera_time;
@@ -636,6 +643,17 @@ class ZEDWrapper {
           if (odom_on)
           {
             sl::TRACKING_STATE tracking_error = zed.getPosition(pose);
+            if(tracking_error == sl::TRACKING_STATE_SEARCHING) lost_frames++;
+            else lost_frames = 0;
+            //std::cerr << "SEARCHING SINCE " << lost_frames*frame_time.count() << std::endl;
+            if(lost_frames*frame_time.count()>10e6 && reset)
+            {
+              grab_status = zed.resetTracking(sl::Transform());
+              tracking_error = zed.getPosition(pose);
+              pub_odom.resize(0);
+              lost_frames = 0;
+              std::cerr << "ZED TRACK LOST RESET POSITION" << std::endl;
+            }
             if(tracking_error!=sl::TRACKING_STATE_OK) std::cout << sl::toString(tracking_error) << std::endl;
             publishOdom(pose, pub_odom, tstamp, max_buffer_length);
           }
@@ -710,6 +728,9 @@ class ZEDWrapper {
 
     ZEDWrapper()
     {
+      //make sure it is set
+      device_poll_thread = nullptr;
+
       //default loop controls
       limg_on  = false;
       rimg_on  = false;
@@ -719,6 +740,7 @@ class ZEDWrapper {
       map_on   = false;
       mesh_extracted = false;
       autocalibration = false;
+      reset = false;
 
       //default camera parameters
       resolution    = sl::RESOLUTION_VGA;
@@ -747,13 +769,6 @@ class ZEDWrapper {
 
       bimg_on = false;
       bimg_rate = 1;
-    }
-
-
-    ~ZEDWrapper()
-    {
-      run_wrapper = false;
-      device_poll_thread->join();
     }
 
     //This function is used to start the thread that will run in the background and talks to the ZED
@@ -842,6 +857,22 @@ class ZEDWrapper {
 
       run_wrapper = true;
       device_poll_thread = new std::thread(&ZEDWrapper::device_poll, this);
+    }
+
+    void stopWrapperThread()
+    {
+      run_wrapper = false;
+      if(device_poll_thread)
+      {
+        device_poll_thread->join();
+        delete device_poll_thread;
+      }
+      device_poll_thread = nullptr;
+    }
+
+    ~ZEDWrapper()
+    {
+      stopWrapperThread();
     }
 
     //all the setter and getter methods
@@ -973,6 +1004,13 @@ class ZEDWrapper {
     inline void setSVOFile(std::string svo_file)
     {
       svo_filename = svo_file;
+    }
+
+
+    inline bool setReset(bool flag)
+    {
+      reset = flag;
+      std::cout << "Reset flag set to " << reset << std::endl;
     }
 
     inline bool getMappingFlag()

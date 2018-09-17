@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
       int cnt = 0;
       while(key != 'q' && stop == false)
       {
-        ImageHeaderMsg* c = buf.read_simple(20, 10, 1000);
+        ImageHeaderMsg* c = buf.read_simple(20, 10, 4000);
         if(c == nullptr) break;
         cv::Mat mymat(c->rows, c->cols, c->type, c->data);
 
@@ -106,7 +106,66 @@ int main(int argc, char **argv) {
       }
       return 0;
     }
-    
+
+    //Example of how to read and display images from the shared buffer
+    if(tmp.compare("png")==0)
+    {
+      long long time_sum=0, buf_sum;
+      int time_cnt=0;
+      std::cerr << "Connect to image buffer" << std::endl;
+
+      //Connect to a buffer containing images (ImageHeaderMsg defines both the header and block size, one image is composed of multiple blocks)
+      SimpleBuffer <ImageHeaderMsg> buf(argv[1]);
+
+      //the owner of the buffer creates and cleans up the shared buffer and usually writes to the buffer
+      //it should be false (0) if another process is writting and owning the buffer
+      std::cerr << "buffer connected as owner " << buf.is_owner() << " " << buf.size() << std::endl;
+
+      //read the pictures until 'q' is pressed (the opencv window must be open and selected for this to work)
+      char key = ' ';
+      vector<ImageHeaderMsg> outbuf;               //a STL vector to read out all ImageheaderMsg blocks currently stored to the buffer
+      std::vector<ImageHeaderMsg>::iterator iter;
+      ImageHeaderMsg *c=NULL;
+      int cnt = 0;
+      while(key != 'q' && stop == false)
+      {
+        ImageHeaderMsg* c = buf.read_simple(1, 10, 4000);
+        if(c == nullptr) break;
+        if(c->size == 0) continue;
+        std::vector <unsigned char> buf((char*)c->data, (char*)(c->data)+c->size);
+        cv::Mat mymat = cv::imdecode(buf, 1);
+        //cv::Mat mymat(c->rows, c->cols, c->type, c->data);
+
+        if(argc>3)
+        {
+          std::string jpgname = std::to_string(cnt);
+          jpgname =std::string(argv[3]) + std::string(6 - jpgname.length(), '0') + jpgname + ".jpg";
+          imwrite(jpgname, mymat);
+          cnt++;
+        }
+        imshow( "Display window", mymat );                //prepare the image in a window
+        key = cv::waitKey(100);                            //show the image and wait for a keystroke in the window
+
+        //the rest is to print the image retrieval frequency and image data to the terminal
+        std::chrono::system_clock::time_point time = std::chrono::system_clock::now();
+        long long buf_time = c->time.sec*1e6 + c->time.usec; 
+        long long rdelta = std::chrono::duration_cast<std::chrono::microseconds>(time - last_time).count();
+        long long bdelta = buf_time - last_buf;
+        if(last_buf==0){ bdelta=0; }
+        last_time=time;
+        last_buf =buf_time;
+        time_sum+=rdelta; buf_sum+=bdelta; time_cnt++;
+        if(time_sum>1e6){
+        std::cout << "Extracted an image of " << c->cols << "x" << c->rows << " (" << c->size << "bytes, type "
+                  << c-> type << ") at real " << 1e6*time_cnt/time_sum << "Hz buffer " << 1e6*time_cnt/buf_sum << "Hz" << std::endl; 
+          time_sum=0; buf_sum=0; time_cnt=0;
+        };
+        //}
+      }
+      return 0;
+    }
+
+
     //Example of how to read and use POSE data from shared buffer
     else if(tmp.compare("odom")==0)
     {
@@ -123,10 +182,33 @@ int main(int argc, char **argv) {
       //is connected to it anymore and we can stop reading from it and clearing up and terminate
       while(buf2.is_owner() == false && stop == false)
       {
-        PoseMsg *p = buf2.read_simple(20, 10, 1000);
+        PoseMsg *p = buf2.read_simple(20, 10, 4000);
         if(p == nullptr) break;
         std::cout << p->time.sec << "." << setfill('0') << setw(6) << p->time.usec << setfill(' ') << setw(0) << " " << p->position[0] << " " << p->position[1] << " " << p->position[2] << " " 
           << p->orientation[0] << " " << p->orientation[1] << " " << p->orientation[2] << " " << p->orientation[3] << std::endl;
+      }
+      return 0;
+    }
+    //Example of how to read and use GPS data from shared buffer
+    else if(tmp.compare("gps")==0)
+    {
+      std::cerr << "Connect to GPS buffer" << std::endl;
+
+      //Connect to a buffer containing PoseMsg blocks
+      SimpleBuffer <GpsMsg> buf2(argv[1]);
+
+      //the owner of the buffer creates and cleans up the shared buffer and usually writes to the buffer
+      //it should be false (0) if another process is writting and owning the buffer
+      std::cerr << "buffer connected as owner " << buf2.is_owner() << std::endl;
+
+      //here we use the trick that once this process becomes the owner of the buffer no other process
+      //is connected to it anymore and we can stop reading from it and clearing up and terminate
+      while(buf2.is_owner() == false && stop == false)
+      {
+        GpsMsg *p = buf2.read_simple(20, 10, 4000);
+        if(p == nullptr) break;
+        std::cout << p->timeStamp.sec << "." << setfill('0') << setw(6) << p->timeStamp.usec << setfill(' ') << std::setprecision(12) << std::setw(12) << " " << p->location[0] << " " << p->location[1] << " " << p->location[2] << " " 
+          << p->orientation[0] << " " << p->orientation[1] << " " << p->orientation[2] << " " << p->numberOfSatellites << " " << p->qualityOfFix << std::endl;
       }
       return 0;
     }

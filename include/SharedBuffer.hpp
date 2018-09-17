@@ -20,7 +20,7 @@
  *
  * Author:  Marco Salathe <msalathe@lbl.gov>
  * Date:    March 2018
- * License: See License.txt in parent folder of this repository.
+ * License: If you like to use this code, please contact the author.
  *
  * WHISHLIST:
  *   * Everything is managed manually through stat, we should just add mutex there
@@ -225,7 +225,7 @@ template <class T> class SharedBuffer
       initialize(bname, bsize);
     }
 
-    ~SharedBuffer<T>()
+    virtual ~SharedBuffer<T>()
     {
       if(locked) nm->unlock();
       locked = false;
@@ -272,7 +272,7 @@ template <class T> class SharedBuffer
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
       if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
       check_mem(); //reconnect or recreate
-      int bsize=buffer->size();
+      //int bsize=buffer->size();
       while(true)
       {
         try
@@ -300,7 +300,7 @@ template <class T> class SharedBuffer
       if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
       if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
       check_mem(); //reconnect or recreate
-      int bsize=buffer->size();
+      //int bsize=buffer->size();
       for(auto it=itl.begin(); it!=itl.end() && (it+1)!=itl.end(); it+=2)
       {
         while(true)
@@ -429,6 +429,32 @@ template <class T> class SharedBuffer
       if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> sharable_lock(*nm);
       if(stat) return stat->user_info;
       return 0;
+    };
+    
+    //Assigns values from first to last to the buffer overwriting any previously insert elements and
+    //shrinking the buffer in size or expanding it to fit first to last
+    template<typename InpIt> int assign(InpIt first, InpIt last)
+    {
+      check_alive();
+      if(buffer==NULL) return 0; //can not write must be wrongly initiated could try to reinitiate
+      if(!locked) boost::interprocess::scoped_lock<boost::interprocess::named_sharable_mutex> lock(*nm);
+      check_mem(); //reconnect or recreate
+      while(true)
+      {
+        try
+        {
+          buffer->assign(first, last);
+        }
+        catch(boost::interprocess::bad_alloc)
+        {
+          if(stat) stat->mem_size+=alloc_size;
+          memory->grow(mem_name.c_str(), alloc_size);
+          check_mem();
+          continue;
+        }
+        break;
+      }
+      return buffer->size();
     };
 
 };
